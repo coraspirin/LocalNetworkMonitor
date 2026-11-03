@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}{{ d.name }}{% endblock %}
+{% block content %}
+{% macro strip(p, left_label) -%}
+<div class="strip" role="img" aria-label="Çevrimiçi zaman çizelgesi">
+  {%- for b in p.buckets -%}<i class="{{ 'on' if b == true else ('off' if b == false else '') }}"></i>{%- endfor -%}
+</div>
+<div class="strip-axis"><span>{{ left_label }}</span><span>şimdi</span></div>
+{%- endmacro %}
+
+<div class="page-head">
+  <div>
+    <div class="muted small"><a href="/">Cihazlar</a> /</div>
+    <h1><span title="{{ d.type_label }}">{{ d.icon }}</span> {{ d.name }}
+      <span class="badge"><span class="dot {{ 'on' if d.online }}"></span>{{ 'Çevrimiçi' if d.online else 'Çevrimdışı' }}</span>
+      {% if d.trusted %}<span class="badge">güvenilir</span>{% endif %}
+      {% if d.is_gateway %}<span class="badge">ağ geçidi</span>{% endif %}
+    </h1>
+    <div class="muted mono">{{ d.ip or '—' }} · {{ d.mac or 'MAC yok' }}{% if d.vendor %} · {{ d.vendor }}{% endif %}</div>
+  </div>
+  <div class="toolbar">
+    <button class="btn small" id="toggle-trust">{{ 'Güvenilir işaretini kaldır' if d.trusted else '✓ Güvenilir olarak işaretle' }}</button>
+    <button class="btn small danger" id="delete-device">Sil</button>
+  </div>
+</div>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h2>Genel bilgiler</h2>
+    <dl class="kv">
+      <dt>Tip</dt><dd>{{ d.type_label }}</dd>
+      <dt>İşletim sistemi</dt><dd>{{ d.os or '—' }}</dd>
+      <dt>Hostname (DNS)</dt><dd>{{ d.hostname or '—' }}</dd>
+      <dt>mDNS adı</dt><dd>{{ d.mdns_name or '—' }}</dd>
+      <dt>NetBIOS adı</dt><dd>{{ d.netbios_name or '—' }}</dd>
+      <dt>Ağ</dt><dd>{% if subnet %}{{ subnet.label }} <span class="mono muted">{{ subnet.cidr }}</span>{% else %}—{% endif %}</dd>
+      <dt>MAC türü</dt><dd>{{ 'Gizli / rastgele (locally administered)' if d.is_random_mac else 'Donanım (üretici atanmış)' }}</dd>
+      <dt>Gecikme</dt><dd>{{ ('%.1f ms' % d.rtt_ms) if d.rtt_ms is not none else '—' }}</dd>
+      <dt>İlk görülme</dt><dd>{{ d.first_seen | localtime }}</dd>
+      <dt>Son görülme</dt><dd>{{ d.last_seen | localtime }}</dd>
+      <dt>Son derin tarama</dt><dd>{{ d.last_deep_scan | localtime }}</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Envanter</h2>
+    <form id="edit-form">
+      <div class="grid cols-2" style="gap:0 12px">
+        <div class="field"><label for="e-name">Ad</label><input type="text" id="e-name" name="name" value="{{ d.custom_name or '' }}" placeholder="{{ d.name }}"></div>
+        <div class="field"><label for="e-type">Tip</label>
+          <select id="e-type" name="device_type">
+            {% for key, val in DEVICE_TYPES.items() %}<option value="{{ key }}" {{ 'selected' if key == d.type }}>{{ val[1] }} {{ val[0] }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field"><label for="e-loc">Konum</label><input type="text" id="e-loc" name="location" value="{{ d.location or '' }}" placeholder="ör. Salon"></div>
+        <div class="field"><label for="e-owner">Sahibi</label><input type="text" id="e-owner" name="owner" value="{{ d.owner or '' }}"></div>
+      </div>
+      <div class="field"><label for="e-notes">Notlar</label><textarea id="e-notes" name="notes">{{ d.notes or '' }}</textarea></div>
+      <button class="btn primary" type="submit">Kaydet</button>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="page-head" style="margin-bottom:8px">
+    <h2 style="margin:0">Çevrimiçi zaman çizelgesi</h2>
+    <div class="muted small">
+      Son 24 saat: <strong>{{ p24.uptime_pct if p24.uptime_pct is not none else '—' }}%</strong> çevrimiçi ·
+      Son 7 gün: <strong>{{ p7.uptime_pct if p7.uptime_pct is not none else '—' }}%</strong> ·
+      Ort. gecikme: {{ ('%.1f ms' % p24.rtt_avg) if p24.rtt_avg is not none else '—' }}
+      {% if p24.rtt_max is not none %}(en yüksek {{ '%.1f' % p24.rtt_max }} ms){% endif %}
+    </div>
+  </div>
+  <h3>Son 24 saat</h3>
+  {{ strip(p24, '24 saat önce') }}
+  <h3>Son 7 gün</h3>
+  {{ strip(p7, '7 gün önce') }}
+  <p class="muted small" style="margin-bottom:0">Yeşil: görüldü · Gri: görülmedi · Boş: tarama yapılmadı. Telefonlar uyku modunda ARP'ye yanıt vermeyebilir.</p>
+</div>
+
+<div class="grid cols-2" style="margin-top:16px">
+  <div class="card">
+    <h2>Açık portlar ve servisler</h2>
+    {% if d.ports %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Port</th><th>Servis</th><th>Ürün / sürüm</th></tr></thead>
+        <tbody>
+          {% for p in d.ports %}
+          <tr>
+            <td class="mono nowrap">{{ p.port }}/{{ p.protocol }}{% if p.tls %} 🔒{% endif %}</td>
+            <td>{{ p.service or '—' }}</td>
+            <td>{{ [p.product, p.version] | select | join(' ') or '—' }}{% if p.extra %} <span class="muted small">({{ p.extra }})</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% elif d.last_deep_scan %}
+    <div class="empty">Açık port bulunamadı.</div>
+    {% else %}
+    <div class="empty">Bu cihaz henüz derin taramadan geçmedi.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Güvenlik bulguları</h2>
+    {% set active = d.findings | rejectattr('resolved') | list %}
+    {% if active %}
+      {% for f in active %}{% include "partials/finding.html" %}{% endfor %}
+    {% else %}
+      <div class="empty">Aktif bulgu yok{% if not d.last_deep_scan %} (cihaz henüz derin taranmadı){% endif %}.</div>
+    {% endif %}
+    {% set resolved = d.findings | selectattr('resolved') | list %}
+    {% if resolved %}
+    <details><summary class="muted">Çözülmüş bulgular ({{ resolved | length }})</summary>
+      {% for f in resolved %}<div class="finding dim sev-{{ f.severity }}"><div class="title">{{ f.title }}</div><div class="muted small">Son görülme {{ f.last_seen | localtime }}</div></div>{% endfor %}
+    </details>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid cols-2" style="margin-top:16px">
+  <div class="card">
+    <h2>Kendini tanıtma bilgileri</h2>
+    <h3>mDNS / Bonjour servisleri</h3>
+    {% if d.mdns_services %}
+    <ul>
+      {% for s in d.mdns_services %}
+      <li><code>{{ s.type }}</code> — {{ s.name }}{% if s.port %} <span class="muted">(port {{ s.port }})</span>{% endif %}
+        {% if s.txt %}<div class="muted small">{% for k, v in s.txt.items() %}{{ k }}={{ v }} {% endfor %}</div>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="muted">Yayın yok.</p>{% endif %}
+    <h3>SSDP / UPnP</h3>
+    {% if d.ssdp %}
+    <dl class="kv">
+      {% for k, v in d.ssdp.items() %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}
+    </dl>
+    {% else %}<p class="muted">Yanıt yok.</p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2>MAC adresleri</h2>
+    <p class="muted small">Gizli MAC kullanan telefonlar zamanla farklı adresler alır; aynı cihaza ait adresler burada toplanır.</p>
+    <table>
+      <thead><tr><th>MAC</th><th>İlk</th><th>Son</th><th></th></tr></thead>
+      <tbody>
+      {% for a in d.aliases %}
+        <tr>
+          <td class="mono">{{ a.mac }}</td>
+          <td class="muted small nowrap">{{ a.first_seen | localtime }}</td>
+          <td class="muted small nowrap">{{ a.last_seen | localtime }}</td>
+          <td>{% if d.aliases | length > 1 %}<button class="btn small" data-split="{{ a.id }}">Ayır</button>{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="muted">Kayıtlı MAC yok (yönlendirilmiş ağ).</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <h3>Başka bir kayıtla birleştir</h3>
+    <div class="toolbar">
+      <select id="merge-target" aria-label="Birleştirilecek cihaz" style="flex:1;min-width:0">
+        <option value="">Bu kaydı şu cihaza taşı…</option>
+        {% for o in others %}<option value="{{ o.id }}">{{ o.name }} ({{ o.ip or o.mac }}){{ '' if o.online else ' — çevrimdışı' }}</option>{% endfor %}
+      </select>
+      <button class="btn small" id="merge-btn">Birleştir</button>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h2>Olay geçmişi</h2>
+  {% if d.events %}
+  <ul class="events">
+    {% for e in d.events %}
+    <li><time>{{ e.ts | localtime }}</time><div>{% if e.severity != 'info' %}<span class="badge sev-{{ e.severity }}">{{ e.severity | sev }}</span> {% endif %}{{ e.message }}</div></li>
+    {% endfor %}
+  </ul>
+  {% else %}<div class="empty">Olay yok.</div>{% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const id = {{ d.id }};
+  const trusted = {{ 'true' if d.trusted else 'false' }};
+  document.getElementById("edit-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const body = Object.fromEntries(new FormData(ev.target).entries());
+    try { await NS.api("PATCH", `/api/devices/${id}`, body); NS.toast("Kaydedildi"); setTimeout(() => location.reload(), 500); }
+    catch (e) { NS.toast(e.message); }
+  });
+  document.getElementById("toggle-trust").addEventListener("click", async () => {
+    try { await NS.api("PATCH", `/api/devices/${id}`, { trusted: !trusted }); location.reload(); } catch (e) { NS.toast(e.message); }
+  });
+  document.getElementById("delete-device").addEventListener("click", async () => {
+    if (!confirm("Bu cihaz ve tüm geçmişi silinsin mi? Ağda tekrar görülürse yeni cihaz olarak eklenir.")) return;
+    try { await NS.api("DELETE", `/api/devices/${id}`); location.href = "/"; } catch (e) { NS.toast(e.message); }
+  });
+  document.getElementById("merge-btn").addEventListener("click", async () => {
+    const target = document.getElementById("merge-target").value;
+    if (!target) return NS.toast("Önce bir cihaz seçin");
+    if (!confirm("Bu kayıt seçilen cihaza taşınacak ve silinecek. Devam edilsin mi?")) return;
+    try { await NS.api("POST", `/api/devices/${id}/merge`, { target_id: Number(target) }); location.href = `/devices/${target}`; }
+    catch (e) { NS.toast(e.message); }
+  });
+  document.querySelectorAll("[data-split]").forEach((b) => b.addEventListener("click", async () => {
+    try { const n = await NS.api("POST", `/api/aliases/${b.dataset.split}/split`); location.href = `/devices/${n.id}`; }
+    catch (e) { NS.toast(e.message); }
+  }));
+})();
+</script>
+<script src="/static/findings.js" defer></script>
+{% endblock %}

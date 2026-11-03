@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Tarama karşılaştırma{% endblock %}
+{% block content %}
+{% set KIND = {'device_added': ('➕', 'Yeni cihaz'), 'device_missing': ('➖', 'Bulunamadı'), 'port_opened': ('🔓', 'Port açıldı'), 'port_closed': ('🔒', 'Port kapandı'), 'service_changed': ('🔁', 'Servis değişti'), 'os_changed': ('💿', 'OS değişti'), 'ip_changed': ('🔀', 'IP değişti'), 'finding_new': ('⚠️', 'Yeni bulgu'), 'finding_resolved': ('✅', 'Bulgu çözüldü')} %}
+<div class="page-head">
+  <div><div class="muted small"><a href="/history">Geçmiş</a> /</div><h1>Tarama karşılaştırma</h1>
+    <div class="muted">İki derin tarama arasındaki port, servis, işletim sistemi ve bulgu farkları</div></div>
+</div>
+
+<div class="card">
+  {% if scans | length < 2 %}
+    <div class="empty">Karşılaştırma için en az iki tamamlanmış derin tarama gerekiyor ({{ scans | length }} mevcut).</div>
+  {% else %}
+  <form method="get" class="toolbar" style="margin-bottom:16px">
+    <label for="a" style="margin:0">Eski</label>
+    <select name="a" id="a">
+      {% for sc in scans %}<option value="{{ sc.id }}" {{ 'selected' if sc.id == result.a }}>#{{ sc.id }} — {{ sc.started_at | localtime }}</option>{% endfor %}
+    </select>
+    <label for="b" style="margin:0">Yeni</label>
+    <select name="b" id="b">
+      {% for sc in scans %}<option value="{{ sc.id }}" {{ 'selected' if sc.id == result.b }}>#{{ sc.id }} — {{ sc.started_at | localtime }}</option>{% endfor %}
+    </select>
+    <button class="btn primary small" type="submit">Karşılaştır</button>
+  </form>
+
+  {% if result.changes %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Cihaz</th><th>Değişiklik</th><th>Ayrıntı</th></tr></thead>
+      <tbody>
+      {% for c in result.changes %}
+        {% set k = KIND.get(c.kind, ('•', c.kind)) %}
+        <tr>
+          <td>{% if c.device != 'net' %}<a href="/devices/{{ c.device }}">{{ c.name }}</a>{% else %}{{ c.name }}{% endif %}</td>
+          <td class="nowrap">{{ k[0] }} {{ k[1] }}</td>
+          <td>{% if c.severity in ('medium', 'high', 'critical') and c.kind == 'finding_new' %}<span class="badge sev-{{ c.severity }}">{{ c.severity | sev }}</span> {% endif %}{{ c.detail }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="empty">Bu iki tarama arasında fark yok.</div>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

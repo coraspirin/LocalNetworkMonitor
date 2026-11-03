@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Cihazlar{% endblock %}
+{% block body_attrs %}data-reload-on-scan="1"{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Ağdaki cihazlar</h1>
+    <div class="muted">
+      {% if last_deep %}Son derin tarama: {{ last_deep.finished_at | localtime }}{% else %}Henüz derin tarama yapılmadı — sağ üstten “Derin tara” ile başlatın.{% endif %}
+    </div>
+  </div>
+  <div class="toolbar">
+    <a class="btn small" href="/api/export/devices.csv">CSV indir</a>
+    <a class="btn small" href="/api/export/devices.json">JSON indir</a>
+  </div>
+</div>
+
+<div class="grid cols-4">
+  <div class="card stat">
+    <div class="label">Toplam cihaz</div>
+    <div class="value">{{ devices | length }}</div>
+    <div class="sub">{{ new_today }} yeni (son 24 saat)</div>
+  </div>
+  <div class="card stat">
+    <div class="label">Çevrimiçi</div>
+    <div class="value">{{ online }}</div>
+    <div class="sub">{{ devices | length - online }} çevrimdışı</div>
+  </div>
+  <a class="card stat" href="/security" style="color:inherit;text-decoration:none">
+    <div class="label">Güvenlik skoru</div>
+    <div class="value grade-{{ grade[0] }}">{{ score }} <span class="small">/ 100 · {{ grade[0] }}</span></div>
+    <div class="sub">{{ grade[1] }}</div>
+  </a>
+  <a class="card stat" href="/security" style="color:inherit;text-decoration:none">
+    <div class="label">Açık bulgular</div>
+    <div class="value">{{ counts.values() | sum }}</div>
+    <div class="sub">
+      {% for sev in ['critical', 'high', 'medium', 'low'] %}{% if counts.get(sev) %}<span class="badge sev-{{ sev }}">{{ counts[sev] }} {{ sev | sev }}</span> {% endif %}{% endfor %}
+      {% if not counts %}Bulgu yok{% endif %}
+    </div>
+  </a>
+</div>
+
+<div class="grid cols-3-1" style="margin-top:16px">
+  <div class="card">
+    <div class="toolbar" style="margin-bottom:12px">
+      <input type="search" id="f-q" placeholder="Ara: ad, IP, MAC, üretici…" style="flex:1;min-width:180px">
+      <select id="f-subnet" aria-label="Ağ">
+        <option value="">Tüm ağlar</option>
+        {% for sn in subnets %}<option value="{{ sn.id }}">{{ sn.label }} ({{ sn.cidr }})</option>{% endfor %}
+      </select>
+      <select id="f-status" aria-label="Durum">
+        <option value="">Tümü</option>
+        <option value="on">Çevrimiçi</option>
+        <option value="off">Çevrimdışı</option>
+        <option value="untrusted">Güvenilmeyen</option>
+        <option value="risk">Riskli</option>
+      </select>
+    </div>
+    {% if devices %}
+    <div class="table-wrap">
+      <table id="devices">
+        <thead>
+          <tr><th>Cihaz</th><th>IP</th><th>MAC</th><th>Üretici</th><th>Port</th><th>Risk</th><th class="nowrap">Son görülme</th></tr>
+        </thead>
+        <tbody>
+        {% for d in devices %}
+          <tr class="{{ 'offline' if not d.online }}"
+              data-search="{{ [d.name, d.ip, d.mac, d.vendor, d.hostname, d.type_label, d.location, d.owner] | select | join(' ') | lower }}"
+              data-subnet="{{ d.subnet_id or '' }}" data-online="{{ 1 if d.online else 0 }}"
+              data-trusted="{{ 1 if d.trusted else 0 }}" data-risk="{{ d.worst_severity or '' }}">
+            <td class="name-cell">
+              <span class="dot {{ 'on' if d.online }}" title="{{ 'Çevrimiçi' if d.online else 'Çevrimdışı' }}"></span>
+              <span title="{{ d.type_label }}">{{ d.icon }}</span>
+              <a href="/devices/{{ d.id }}"><strong>{{ d.name }}</strong></a>
+              {% if d.is_gateway %}<span class="badge">ağ geçidi</span>{% endif %}
+              {% if not d.trusted %}<span class="badge" title="Henüz güvenilir olarak işaretlenmedi">yeni</span>{% endif %}
+              {% if d.location %}<div class="muted small">{{ d.location }}</div>{% endif %}
+            </td>
+            <td class="mono nowrap">{{ d.ip or '—' }}</td>
+            <td class="mono nowrap">{{ d.mac or '—' }}{% if d.is_random_mac %} <span class="badge" title="Gizli / rastgele MAC adresi">gizli</span>{% endif %}</td>
+            <td>{{ d.vendor or '—' }}</td>
+            <td>{{ d.open_ports or '—' }}</td>
+            <td>{% if d.worst_severity %}<span class="badge sev-{{ d.worst_severity }}">{{ d.worst_severity | sev }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td class="nowrap muted">{{ d.last_seen | localtime('%d.%m %H:%M') }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div id="no-match" class="empty" hidden>Filtreye uyan cihaz yok.</div>
+    {% else %}
+    <div class="empty">Henüz cihaz bulunmadı. İlk tarama birkaç saniye içinde başlar; dilerseniz “Hızlı keşif” düğmesini kullanın.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Son olaylar</h2>
+    {% if recent %}
+    <ul class="events">
+      {% for e in recent %}
+      <li>
+        <time>{{ e.ts | localtime('%d.%m %H:%M') }}</time>
+        <div>
+          {% if e.severity in ('medium', 'high', 'critical') %}<span class="badge sev-{{ e.severity }}">{{ e.severity | sev }}</span>{% endif %}
+          {% if e.device_id %}<a href="/devices/{{ e.device_id }}">{{ names.get(e.device_id, 'Cihaz') }}</a>:{% endif %}
+          {{ e.message }}
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    <p><a href="/history">Tüm geçmiş →</a></p>
+    {% else %}
+    <div class="empty">Henüz olay yok.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const q = document.getElementById("f-q"), sn = document.getElementById("f-subnet"), st = document.getElementById("f-status");
+  const rows = Array.from(document.querySelectorAll("#devices tbody tr"));
+  const none = document.getElementById("no-match");
+  const RISKY = ["medium", "high", "critical"];
+  function apply() {
+    const term = (q.value || "").toLowerCase().trim();
+    let shown = 0;
+    rows.forEach((r) => {
+      let ok = !term || r.dataset.search.includes(term);
+      if (ok && sn.value) ok = r.dataset.subnet === sn.value;
+      if (ok && st.value === "on") ok = r.dataset.online === "1";
+      if (ok && st.value === "off") ok = r.dataset.online === "0";
+      if (ok && st.value === "untrusted") ok = r.dataset.trusted === "0";
+      if (ok && st.value === "risk") ok = RISKY.includes(r.dataset.risk);
+      r.hidden = !ok;
+      if (ok) shown++;
+    });
+    if (none) none.hidden = shown > 0;
+    try { localStorage.setItem("ns-filter", JSON.stringify({ q: q.value, sn: sn.value, st: st.value })); } catch (e) {}
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem("ns-filter") || "{}");
+    if (saved.q) q.value = saved.q;
+    if (saved.sn) sn.value = saved.sn;
+    if (saved.st) st.value = saved.st;
+  } catch (e) {}
+  [q, sn, st].forEach((el) => el && el.addEventListener("input", apply));
+  if (rows.length) apply();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Ağ haritası{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Ağ haritası</h1><div class="muted">Ağ geçidi merkezde; cihazlar ağa (subnet) ve tipe göre gruplanır. Bir cihaza tıklayarak ayrıntılara gidin.</div></div>
+  <div class="toolbar">
+    <label class="check" style="margin:0"><input type="checkbox" id="show-offline"> Çevrimdışıları göster</label>
+  </div>
+</div>
+<div class="card">
+  <div id="map-wrap"><div class="empty">Yükleniyor…</div></div>
+  <div class="legend">
+    <span><span class="dot on"></span>çevrimiçi</span>
+    <span><span class="dot"></span>çevrimdışı</span>
+    <span style="color:var(--sev-medium)">◯ orta risk</span>
+    <span style="color:var(--sev-high)">◯ yüksek/kritik risk</span>
+    {% for key, val in DEVICE_TYPES.items() %}<span>{{ val[1] }} {{ val[0] }}</span>{% endfor %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const ICONS = {{ DEVICE_TYPES | tojson }};
+  const NS_SVG = "http://www.w3.org/2000/svg";
+  const wrap = document.getElementById("map-wrap");
+  const chk = document.getElementById("show-offline");
+  let data = null;
+
+  function el(name, attrs, parent) {
+    const e = document.createElementNS(NS_SVG, name);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  // Bir merkez etrafında halkalar halinde yerleşim
+  function rings(n, cx, cy, r0, gap, spacing) {
+    const pos = [];
+    let ring = 0, placed = 0;
+    while (placed < n) {
+      const r = r0 + ring * gap;
+      const cap = Math.max(6, Math.floor((2 * Math.PI * r) / spacing));
+      const count = Math.min(cap, n - placed);
+      const offset = ring % 2 ? Math.PI / count : 0;
+      for (let i = 0; i < count; i++) {
+        const a = offset + (2 * Math.PI * i) / count - Math.PI / 2;
+        pos.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a), r });
+      }
+      placed += count;
+      ring++;
+    }
+    return pos;
+  }
+
+  function short(s, n) { return s && s.length > n ? s.slice(0, n - 1) + "…" : s || ""; }
+
+  function draw() {
+    const devices = data.devices.filter((d) => (chk.checked || d.online) && !d.is_gateway);
+    wrap.innerHTML = "";
+    if (!devices.length && !data.gateway) {
+      wrap.innerHTML = '<div class="empty">Henüz cihaz yok.</div>';
+      return;
+    }
+    const groups = {};
+    devices.forEach((d) => { (groups[d.subnet_id || 0] = groups[d.subnet_id || 0] || []).push(d); });
+    const order = Object.keys(ICONS);
+    Object.values(groups).forEach((g) => g.sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type) || (a.name > b.name ? 1 : -1)));
+    const keys = Object.keys(groups);
+    const subnetLabel = Object.fromEntries(data.subnets.map((s) => [String(s.id), `${s.label} · ${s.cidr}`]));
+
+    const svg = el("svg", { role: "img", "aria-label": "Ağ haritası" }, wrap);
+    const gLinks = el("g", {}, svg), gNodes = el("g", {}, svg);
+    const C = { x: 0, y: 0 };
+    let hubs;
+    if (keys.length <= 1) {
+      hubs = [{ key: keys[0], x: C.x, y: C.y, direct: true }];
+    } else {
+      const hp = rings(keys.length, C.x, C.y, 260 + keys.length * 40, 0, 1);
+      hubs = keys.map((k, i) => ({ key: k, x: hp[i].x, y: hp[i].y }));
+    }
+    let minX = -120, maxX = 120, minY = -120, maxY = 120;
+    function grow(x, y, pad) { minX = Math.min(minX, x - pad); maxX = Math.max(maxX, x + pad); minY = Math.min(minY, y - pad); maxY = Math.max(maxY, y + pad); }
+
+    function node(d, x, y, parent) {
+      el("line", { x1: parent.x, y1: parent.y, x2: x, y2: y, class: "map-link" }, gLinks);
+      const risk = d.worst_severity ? " risk-" + d.worst_severity : "";
+      const a = el("a", { href: `/devices/${d.id}`, class: `map-node ${d.online ? "online" : "offline"}${risk}` }, gNodes);
+      const t = el("title", {}, a);
+      t.textContent = `${d.name}\n${d.ip || ""}  ${d.mac || ""}\n${d.type_label}${d.vendor ? " · " + d.vendor : ""}${d.open_ports ? "\n" + d.open_ports + " açık port" : ""}`;
+      el("circle", { cx: x, cy: y, r: 20 }, a);
+      const ic = el("text", { x, y: y + 7, "text-anchor": "middle", class: "icon" }, a);
+      ic.textContent = (ICONS[d.type] || ICONS.unknown)[1];
+      const lb = el("text", { x, y: y + 36, "text-anchor": "middle" }, a);
+      lb.textContent = short(d.name, 18);
+      grow(x, y, 70);
+    }
+
+    hubs.forEach((h) => {
+      const list = groups[h.key];
+      if (!h.direct) {
+        el("line", { x1: C.x, y1: C.y, x2: h.x, y2: h.y, class: "map-link", "stroke-dasharray": "4 4" }, gLinks);
+        const g = el("g", { class: "map-hub" }, gNodes);
+        el("circle", { cx: h.x, cy: h.y, r: 10 }, g);
+        const t = el("text", { x: h.x, y: h.y - 16, "text-anchor": "middle" }, g);
+        t.textContent = subnetLabel[h.key] || "Diğer";
+      }
+      const pos = rings(list.length, h.x, h.y, h.direct ? 150 : 110, 95, 85);
+      list.forEach((d, i) => node(d, pos[i].x, pos[i].y, h));
+    });
+
+    // ağ geçidi
+    const gw = data.gateway;
+    const ga = el("a", gw ? { href: `/devices/${gw.id}`, class: "map-node online" } : { class: "map-node online" }, gNodes);
+    el("circle", { cx: C.x, cy: C.y, r: 32 }, ga);
+    const gi = el("text", { x: C.x, y: C.y + 10, "text-anchor": "middle", class: "icon", style: "font-size:28px" }, ga);
+    gi.textContent = "🌐";
+    const gl = el("text", { x: C.x, y: C.y + 50, "text-anchor": "middle", style: "font-weight:600" }, ga);
+    gl.textContent = gw ? `${short(gw.name, 22)} (${gw.ip})` : "Ağ geçidi";
+
+    svg.setAttribute("viewBox", `${minX} ${minY} ${maxX - minX} ${maxY - minY}`);
+  }
+
+  async function load() {
+    try {
+      data = await NS.api("GET", "/api/map");
+      draw();
+    } catch (e) {
+      wrap.innerHTML = `<div class="empty">Harita yüklenemedi: ${e.message}</div>`;
+    }
+  }
+  chk.addEventListener("change", () => data && draw());
+  document.addEventListener("DOMContentLoaded", load);
+})();
+</script>
+{% endblock %}

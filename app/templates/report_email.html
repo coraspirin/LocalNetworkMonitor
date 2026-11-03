@@ -1,0 +1,79 @@
+{% set SEV_COLORS = {'critical': '#a1127a', 'high': '#d64545', 'medium': '#d98a00', 'low': '#2f6fde', 'info': '#7a8399'} %}
+<!doctype html>
+<html lang="tr">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Haftalık ağ raporu</title></head>
+<body style="margin:0;background:#f6f7f9;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1c2230;font-size:14px;line-height:1.5">
+<div style="max-width:640px;margin:0 auto;padding:24px 16px">
+  <h1 style="font-size:20px;margin:0 0 4px">🛰️ Haftalık ağ raporu</h1>
+  <div style="color:#6b7385;margin-bottom:20px">Son {{ r.days }} gün · {{ r.generated | localtime }}</div>
+
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:20px">
+    <tr>
+      <td style="background:#fff;border:1px solid #e2e5eb;border-radius:8px;padding:12px;width:33%">
+        <div style="color:#6b7385;font-size:11px;text-transform:uppercase">Güvenlik skoru</div>
+        <div style="font-size:24px;font-weight:700">{{ r.score }} <span style="font-size:13px;color:#6b7385">{{ r.grade[0] }}</span></div>
+        {% if r.score_prev is not none %}
+          {% set delta = r.score - r.score_prev %}
+          <div style="font-size:12px;color:{{ '#1f9d55' if delta >= 0 else '#d64545' }}">{{ '+' if delta > 0 }}{{ delta }} (geçen hafta {{ r.score_prev }})</div>
+        {% endif %}
+      </td>
+      <td style="width:8px"></td>
+      <td style="background:#fff;border:1px solid #e2e5eb;border-radius:8px;padding:12px;width:33%">
+        <div style="color:#6b7385;font-size:11px;text-transform:uppercase">Cihazlar</div>
+        <div style="font-size:24px;font-weight:700">{{ r.total }}</div>
+        <div style="font-size:12px;color:#6b7385">{{ r.online }} çevrimiçi</div>
+      </td>
+      <td style="width:8px"></td>
+      <td style="background:#fff;border:1px solid #e2e5eb;border-radius:8px;padding:12px;width:33%">
+        <div style="color:#6b7385;font-size:11px;text-transform:uppercase">Yeni cihaz</div>
+        <div style="font-size:24px;font-weight:700">{{ r.new_devices | length }}</div>
+        <div style="font-size:12px;color:#6b7385">{{ r.left | length }} ayrılma olayı</div>
+      </td>
+    </tr>
+  </table>
+
+  {% if r.security_events %}
+  <div style="background:#fdecec;border:1px solid #f3b8b8;border-radius:8px;padding:12px;margin-bottom:20px">
+    <strong>⚠️ Güvenlik uyarıları</strong>
+    <ul style="margin:6px 0 0;padding-left:18px">{% for e in r.security_events %}<li>{{ e.ts | localtime }} — {{ e.message }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  <h2 style="font-size:16px;margin:20px 0 8px">Yeni cihazlar</h2>
+  {% if r.new_devices %}
+  <table width="100%" cellspacing="0" cellpadding="6" style="background:#fff;border:1px solid #e2e5eb;border-radius:8px;border-collapse:separate">
+    {% for d in r.new_devices %}
+    <tr><td style="border-bottom:1px solid #eef0f3">{{ type_icon(d.device_type) }} {{ d.display_name }}</td><td style="border-bottom:1px solid #eef0f3;font-family:monospace;font-size:12px">{{ d.ip }}<br>{{ d.mac or '' }}</td><td style="border-bottom:1px solid #eef0f3;font-size:12px;color:#6b7385">{{ d.first_seen | localtime }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p style="color:#6b7385">Bu hafta yeni cihaz katılmadı.</p>{% endif %}
+
+  <h2 style="font-size:16px;margin:20px 0 8px">Bu hafta ortaya çıkan bulgular</h2>
+  {% if r.new_findings %}
+  <ul style="padding-left:18px">
+    {% for f in r.new_findings %}
+    <li><span style="color:{{ SEV_COLORS[f.severity] }};font-weight:600">[{{ f.severity | sev }}]</span> {{ f.title }}{% if f.device_id and r.devices.get(f.device_id) %} — {{ r.devices[f.device_id].display_name }}{% endif %}{% if f.resolved %} <em style="color:#1f9d55">(çözüldü)</em>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% else %}<p style="color:#6b7385">Yeni bulgu yok. 🎉</p>{% endif %}
+
+  <h2 style="font-size:16px;margin:20px 0 8px">Açık bulgular (en önemli 20)</h2>
+  {% if r.open_findings %}
+  <ul style="padding-left:18px">
+    {% for f in r.open_findings %}
+    <li><span style="color:{{ SEV_COLORS[f.severity] }};font-weight:600">[{{ f.severity | sev }}]</span> {{ f.title }}{% if f.device_id and r.devices.get(f.device_id) %} — {{ r.devices[f.device_id].display_name }}{% endif %}<br><span style="color:#6b7385;font-size:12px">{{ f.remediation }}</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p style="color:#6b7385">Açık bulgu yok.</p>{% endif %}
+
+  {% if r.left %}
+  <h2 style="font-size:16px;margin:20px 0 8px">Ağdan ayrılanlar</h2>
+  <ul style="padding-left:18px">
+    {% for e, d in r.left[:20] %}<li>{{ e.ts | localtime }} — {{ d.display_name if d else 'Silinmiş cihaz' }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  <p style="color:#9aa1b1;font-size:12px;margin-top:28px">Local Network Monitor tarafından otomatik oluşturuldu.</p>
+</div>
+</body>
+</html>

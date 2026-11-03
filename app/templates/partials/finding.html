@@ -1,0 +1,26 @@
+<div class="finding sev-{{ f.severity }}{{ ' dim' if f.ignored }}">
+  <div class="head">
+    <div>
+      <span class="badge sev-{{ f.severity }}">{{ f.severity | sev }}</span>
+      <span class="title">{{ f.title }}</span>
+      {% if f.port %}<span class="muted small mono">port {{ f.port }}</span>{% endif %}
+      {% if f.ignored %}<span class="badge">yoksayıldı</span>{% endif %}
+    </div>
+    <div class="toolbar">
+      <button class="btn small" data-ignore="{{ f.id }}" data-value="{{ 'false' if f.ignored else 'true' }}">{{ 'Geri al' if f.ignored else 'Yoksay' }}</button>
+      {% if f.source == 'watchdog' %}<button class="btn small" data-resolve="{{ f.id }}">Çözüldü</button>{% endif %}
+    </div>
+  </div>
+  {% if f.description %}<p>{{ f.description }}</p>{% endif %}
+  {% if f.remediation %}<p class="small"><strong>Öneri:</strong> {{ f.remediation }}</p>{% endif %}
+  {% if f.cves %}
+  <div class="cves">
+    {% for c in f.cves[:12] %}
+      {% set cls = 'critical' if c.cvss >= 9 else ('high' if c.cvss >= 7 else ('medium' if c.cvss >= 4 else 'low')) %}
+      <a class="badge sev-{{ cls }}" href="https://vulners.com/{{ c.type or 'cve' }}/{{ c.id }}" target="_blank" rel="noopener">{{ c.id }} · {{ c.cvss }}{% if c.exploit %} · exploit{% endif %}</a>
+    {% endfor %}
+    {% if f.cves | length > 12 %}<span class="muted small">+{{ f.cves | length - 12 }}</span>{% endif %}
+  </div>
+  {% endif %}
+  <div class="muted small" style="margin-top:6px">İlk görülme {{ f.first_seen | localtime }} · kaynak: {{ f.source }}</div>
+</div>

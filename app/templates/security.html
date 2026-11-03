@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Güvenlik{% endblock %}
+{% block body_attrs %}data-reload-on-scan="1"{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Güvenlik</h1><div class="muted">Derin taramalar, router denetimi ve sürekli izleme bulguları</div></div></div>
+
+<div class="grid cols-3-1">
+  <div class="card">
+    <div class="score">
+      <svg class="score-ring grade-{{ grade[0] }}" viewBox="0 0 36 36" aria-hidden="true">
+        <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--panel-2)" stroke-width="3.5"></circle>
+        <circle cx="18" cy="18" r="15.9" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"
+                stroke-dasharray="{{ score }} 100" transform="rotate(-90 18 18)" pathLength="100"></circle>
+        <text x="18" y="22" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor">{{ grade[0] }}</text>
+      </svg>
+      <div>
+        <div class="stat"><div class="value grade-{{ grade[0] }}">{{ score }} <span class="small muted">/ 100</span></div></div>
+        <div class="muted">{{ grade[1] }} — açık bulgulara göre hesaplanır (kritik −25, yüksek −10, orta −4, düşük −1; cihaz başına en fazla −40).</div>
+      </div>
+    </div>
+    <h3>Skor geçmişi (60 gün)</h3>
+    {% if history_len %}
+    <svg viewBox="0 0 {{ chart.width }} {{ chart.height }}" style="width:100%;height:auto;max-height:160px" role="img" aria-label="Güvenlik skoru geçmişi">
+      {% for y in [0, 50, 100] %}
+        {% set yy = chart.height - 5 - y * (chart.height - 10) / 100 %}
+        <line x1="0" x2="{{ chart.width }}" y1="{{ yy }}" y2="{{ yy }}" stroke="var(--border)" stroke-dasharray="3 3"></line>
+        <text x="2" y="{{ [yy - 2, 9] | max }}" font-size="9" fill="var(--muted)">{{ y }}</text>
+      {% endfor %}
+      <polyline points="{{ chart.points }}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"></polyline>
+      {% for dt in chart.dots %}<circle cx="{{ dt.x }}" cy="{{ dt.y }}" r="3.5" fill="var(--accent)"><title>{{ dt.score }}</title></circle>{% endfor %}
+    </svg>
+    {% else %}<p class="muted">İlk derin taramadan sonra burada görünecek.</p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Bulgu dağılımı</h2>
+    <table>
+      {% for sev in ['critical', 'high', 'medium', 'low', 'info'] %}
+      <tr><td><span class="badge sev-{{ sev }}">{{ sev | sev }}</span></td><td style="text-align:right"><strong>{{ counts.get(sev, 0) }}</strong></td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<div class="grid cols-3-1" style="margin-top:16px">
+  <div class="card">
+    <h2>Açık bulgular</h2>
+    {% if findings %}
+      {% for f in findings %}
+        {% if f.device_id and devices.get(f.device_id) %}
+          {% set dev = devices[f.device_id] %}
+          <div class="muted small" style="margin-bottom:2px">{{ type_icon(dev.device_type) }} <a href="/devices/{{ dev.id }}">{{ dev.display_name }}</a> <span class="mono">{{ dev.ip }}</span></div>
+        {% else %}
+          <div class="muted small" style="margin-bottom:2px">🌐 Ağ geneli</div>
+        {% endif %}
+        {% include "partials/finding.html" %}
+      {% endfor %}
+    {% else %}
+      <div class="empty">🎉 Açık bulgu yok.</div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="card">
+      <h2>Router / UPnP</h2>
+      {% if not router %}
+        <p class="muted">Henüz denetlenmedi (derin taramada çalışır).</p>
+      {% elif not router.igd_found %}
+        <p>✅ UPnP IGD yanıt vermedi — router'da UPnP kapalı görünüyor.</p>
+        <p class="muted small">Son kontrol: {{ router.ts | localtime }}</p>
+      {% else %}
+        <dl class="kv">
+          <dt>Router</dt><dd>{{ router.model or router.igd_ip }}</dd>
+          <dt>Dış IP</dt><dd class="mono">{{ router.external_ip or '—' }}</dd>
+          <dt>Son kontrol</dt><dd>{{ router.ts | localtime }}</dd>
+        </dl>
+        <h3>UPnP port yönlendirmeleri ({{ router.mappings | length }})</h3>
+        {% if router.mappings %}
+        <table>
+          <thead><tr><th>Dış</th><th>İç hedef</th><th>Açıklama</th></tr></thead>
+          <tbody>
+          {% for m in router.mappings %}
+            <tr class="{{ '' if m.enabled else 'offline' }}"><td class="mono">{{ m.protocol }} {{ m.external_port }}</td><td class="mono">{{ m.internal_client }}:{{ m.internal_port }}</td><td class="small">{{ m.description or '—' }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}<p class="muted">Yönlendirme yok.</p>{% endif %}
+      {% endif %}
+      {% if router and router.error %}<p class="badge sev-medium">{{ router.error }}</p>{% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Sürekli izleme</h2>
+      <dl class="kv">
+        <dt>ARP izleyici</dt><dd>{{ '🟢 çalışıyor' if watchdog.running else '⚪ kapalı' }}</dd>
+        <dt>Ağ geçidi MAC</dt><dd class="mono">{{ watchdog.gateway_mac or '—' }}</dd>
+        <dt>Bilinen DHCP</dt><dd class="mono">{{ watchdog.dhcp_server_known or '—' }}</dd>
+        <dt>Son DHCP yoklaması</dt>
+        <dd>{% if watchdog.last_dhcp_probe.ts %}{{ watchdog.last_dhcp_probe.ts | localtime }} —
+          {% if watchdog.last_dhcp_probe.error %}<span class="muted">{{ watchdog.last_dhcp_probe.error }}</span>
+          {% else %}{{ watchdog.last_dhcp_probe.offers | length }} teklif{% endif %}{% else %}—{% endif %}</dd>
+      </dl>
+      <p><button class="btn small" id="dhcp-probe">DHCP sunucularını şimdi kontrol et</button></p>
+      <p class="muted small">ARP izleyici, ağ geçidinin MAC adresinin değişmesini (ARP spoofing) anında yakalar. DHCP yoklaması ağda ikinci bir DHCP sunucusu olup olmadığını kontrol eder.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/findings.js" defer></script>
+<script>
+document.getElementById("dhcp-probe").addEventListener("click", async (ev) => {
+  ev.target.disabled = true;
+  NS.toast("DHCP yoklaması yapılıyor (~6 sn)…");
+  try {
+    const r = await NS.api("POST", "/api/watchdog/dhcp-probe");
+    NS.toast(r.error ? "Hata: " + r.error : `${r.offers.length} DHCP teklifi alındı`);
+    setTimeout(() => location.reload(), 1200);
+  } catch (e) { NS.toast(e.message); ev.target.disabled = false; }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Giriş · Local Network Monitor</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="card login-box">
+    <h1>🛰️ Ağ İzleyici</h1>
+    <p class="muted">Devam etmek için yönetici şifresini girin.</p>
+    {% if error %}<p class="badge sev-high">{{ error }}</p>{% endif %}
+    <form method="post" action="/login">
+      <input type="hidden" name="next" value="{{ next }}">
+      <div class="field">
+        <label for="password">Şifre</label>
+        <input id="password" type="password" name="password" autofocus required>
+      </div>
+      <button class="btn primary" type="submit">Giriş yap</button>
+    </form>
+  </div>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Rapor{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Haftalık rapor</h1><div class="muted">Ayarlarda seçilen gün ve saatte bildirim adreslerine otomatik gönderilir.</div></div>
+  <div class="toolbar">
+    <a class="btn small" href="/api/report/preview" target="_blank" rel="noopener">Yeni sekmede aç</a>
+    <button class="btn primary small" id="send-report" {{ 'disabled' if not has_targets }} title="{{ '' if has_targets else 'Önce Ayarlar > Bildirimler kısmından bir adres ekleyin' }}">Şimdi gönder</button>
+  </div>
+</div>
+{% if not has_targets %}<p class="notice">Rapor göndermek için <a href="/settings">Ayarlar</a> sayfasından bir bildirim adresi (ör. e-posta) ekleyin.</p>{% endif %}
+<div class="card" style="padding:0;overflow:hidden">
+  <iframe src="/api/report/preview" title="Rapor önizlemesi" style="width:100%;height:75vh;border:0;background:#fff"></iframe>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const btn = document.getElementById("send-report");
+btn && btn.addEventListener("click", async () => {
+  btn.disabled = true;
+  try { await NS.api("POST", "/api/report/send"); NS.toast("Rapor gönderildi"); } catch (e) { NS.toast(e.message); }
+  btn.disabled = false;
+});
+</script>
+{% endblock %}

@@ -1,0 +1,17 @@
+services:
+  netscanner:
+    build: .
+    image: localnetworkmonitor:latest
+    container_name: localnetworkmonitor
+    # Ev ağını L2 seviyesinde (ARP, mDNS, SSDP, DHCP) görebilmek için host ağı şart.
+    # Yalnızca Linux host'ta (Raspberry Pi, NAS, sunucu) tam çalışır.
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
