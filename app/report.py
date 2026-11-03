@@ -6,7 +6,7 @@ from datetime import timedelta
 
 from sqlmodel import select
 
-from app import notify
+from app import i18n, notify
 from app.db import session_scope
 from app.models import Device, DeviceEvent, Finding, SecurityScoreHistory, utcnow
 from app.pipeline import compute_score
@@ -49,6 +49,8 @@ def render(env, data: dict) -> str:
 
 
 def send_weekly(env) -> bool:
-    data = build()
-    html = render(env, data)
-    return notify.send(f"Haftalık ağ raporu — skor {data['score']}", html, "info", html=True, background=False)
+    with i18n.use_lang(i18n.default_language()):
+        data = build()
+        html = render(env, data)
+        subject = i18n.t("mail.subject", score=data["score"])
+    return notify.send(subject, html, "info", html=True, background=False)

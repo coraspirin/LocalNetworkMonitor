@@ -14,13 +14,14 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
 from sqlmodel import Session, delete, select
 
-from app import notify, scheduler, settings_store
+from app import i18n, notify, scheduler, settings_store
 from app.db import get_session
 from app.models import (
     Device,
     DeviceAlias,
     DeviceEvent,
     Finding,
+    MergeSuggestion,
     Port,
     PresenceSample,
     Scan,
@@ -31,14 +32,19 @@ from app.models import (
     utcnow,
 )
 from app.monitor import watchdog_service
-from app.pipeline import build_snapshot, compute_score, manager, merge_devices, split_alias
+from app.pipeline import build_snapshot, compute_score, manager, merge_devices, pending_suggestions, split_alias
 from app.scanner import analysis, devicetype
 
 router = APIRouter(prefix="/api")
 
 
 # ------------------------------------------------------------------ serileştirme
-def device_dict(d: Device, ports_count: int = 0, worst: str | None = None) -> dict:
+def err(status: int, key: str, /, **params) -> HTTPException:
+    """Etkin dilde hata mesajı."""
+    return HTTPException(status, i18n.t(key, **params))
+
+
+def device_dict(d: Device, ports_count: int = 0, worst: str | None = None, suggestions: int = 0) -> dict:
     return {
         "id": d.id,
         "name": d.display_name,
@@ -49,6 +55,9 @@ def device_dict(d: Device, ports_count: int = 0, worst: str | None = None) -> di
         "hostname": d.hostname,
         "mdns_name": d.mdns_name,
         "netbios_name": d.netbios_name,
+        "dhcp_hostname": d.dhcp_hostname,
+        "os_family": d.os_family,
+        "os_family_label": i18n.t(f"os.{d.os_family}") if d.os_family else None,
         "os": d.os_guess,
         "type": d.device_type,
         "type_label": devicetype.label(d.device_type),
@@ -58,6 +67,8 @@ def device_dict(d: Device, ports_count: int = 0, worst: str | None = None) -> di
         "trusted": d.trusted,
         "is_gateway": d.is_gateway,
         "is_random_mac": d.is_random_mac,
+        "archived": d.archived,
+        "pending_suggestions": suggestions,
         "location": d.location,
         "owner": d.owner,
         "notes": d.notes,
@@ -72,14 +83,33 @@ def device_dict(d: Device, ports_count: int = 0, worst: str | None = None) -> di
 
 def finding_dict(f: Finding) -> dict:
     return {
-        "id": f.id, "device_id": f.device_id, "severity": f.severity, "title": f.title, "description": f.description,
-        "remediation": f.remediation, "source": f.source, "port": f.port, "cves": f.cve_list(),
+        "id": f.id, "device_id": f.device_id, "severity": f.severity,
+        "title": i18n.finding_text(f.msg_id, f.params, "title", f.title),
+        "description": i18n.finding_text(f.msg_id, f.params, "desc", f.description),
+        "remediation": i18n.finding_text(f.msg_id, f.params, "fix", f.remediation),
+        "source": f.source, "port": f.port, "cves": f.cve_list(),
         "first_seen": iso(f.first_seen), "last_seen": iso(f.last_seen),
         "resolved": f.resolved, "ignored": f.ignored,
     }
 
 
-def device_summaries(s: Session) -> list[dict]:
+def event_dict(e: DeviceEvent) -> dict:
+    return {"ts": iso(e.ts), "kind": e.kind, "kind_label": i18n.t(f"evk.{e.kind}") if i18n.has(f"evk.{e.kind}") else e.kind,
+            "severity": e.severity, "message": i18n.event_text(e.kind, e.params, e.message), "device_id": e.device_id}
+
+
+def suggestion_dict(sg: MergeSuggestion, s: Session) -> dict:
+    dev, cand = s.get(Device, sg.device_id), s.get(Device, sg.candidate_id)
+    reasons = json.loads(sg.reasons or "[]")
+    return {
+        "id": sg.id, "device_id": sg.device_id, "candidate_id": sg.candidate_id, "score": sg.score, "status": sg.status,
+        "device_name": dev.display_name if dev else None, "candidate_name": cand.display_name if cand else None,
+        "reasons": reasons, "reason_labels": [i18n.t(f"reason.{r}") for r in reasons if i18n.has(f"reason.{r}")],
+        "created_at": iso(sg.created_at),
+    }
+
+
+def device_summaries(s: Session, include_archived: bool = False) -> list[dict]:
     port_counts: dict[int, int] = {}
     for p in s.exec(select(Port)):
         port_counts[p.device_id] = port_counts.get(p.device_id, 0) + 1
@@ -90,10 +120,15 @@ def device_summaries(s: Session) -> list[dict]:
         cur = worst.get(f.device_id)
         if cur is None or analysis.severity_rank(f.severity) > analysis.severity_rank(cur):
             worst[f.device_id] = f.severity
+    sugg: dict[int, int] = {}
+    for sg in pending_suggestions(s):
+        for did in (sg.device_id, sg.candidate_id):
+            sugg[did] = sugg.get(did, 0) + 1
     from app.netutil import ip_sort_key
 
-    devices = sorted(s.exec(select(Device)).all(), key=lambda d: (not d.online, ip_sort_key(d.ip)))
-    return [device_dict(d, port_counts.get(d.id, 0), worst.get(d.id)) for d in devices]
+    q = select(Device) if include_archived else select(Device).where(Device.archived == False)  # noqa: E712
+    devices = sorted(s.exec(q).all(), key=lambda d: (d.archived, not d.online, ip_sort_key(d.ip)))
+    return [device_dict(d, port_counts.get(d.id, 0), worst.get(d.id), sugg.get(d.id, 0)) for d in devices]
 
 
 def presence_buckets(s: Session, device_id: int, hours: int = 24, buckets: int = 96) -> dict:
@@ -131,8 +166,9 @@ def health():
 
 # ------------------------------------------------------------------ cihazlar
 @router.get("/devices")
-def list_devices(q: Optional[str] = None, subnet_id: Optional[int] = None, online: Optional[bool] = None, s: Session = Depends(get_session)):
-    items = device_summaries(s)
+def list_devices(q: Optional[str] = None, subnet_id: Optional[int] = None, online: Optional[bool] = None,
+                 include_archived: bool = False, s: Session = Depends(get_session)):
+    items = device_summaries(s, include_archived)
     if q:
         ql = q.lower()
         items = [d for d in items if any(ql in str(v).lower() for v in (d["name"], d["ip"], d["mac"], d["vendor"], d["hostname"], d["type_label"], d["location"]) if v)]
@@ -146,7 +182,7 @@ def list_devices(q: Optional[str] = None, subnet_id: Optional[int] = None, onlin
 def _get_device(s: Session, device_id: int) -> Device:
     d = s.get(Device, device_id)
     if not d:
-        raise HTTPException(404, "Cihaz bulunamadı")
+        raise err(404, "err.device_not_found")
     return d
 
 
@@ -161,7 +197,8 @@ def get_device(device_id: int, s: Session = Depends(get_session)):
         "ports": [p.model_dump() | {"label": p.label} for p in ports],
         "findings": [finding_dict(f) for f in findings],
         "aliases": [{"id": a.id, "mac": a.mac, "first_seen": iso(a.first_seen), "last_seen": iso(a.last_seen)} for a in aliases],
-        "events": [{"ts": iso(e.ts), "kind": e.kind, "severity": e.severity, "message": e.message} for e in events],
+        "events": [event_dict(e) for e in events],
+        "suggestions": [suggestion_dict(sg, s) for sg in pending_suggestions(s, device_id)],
         "mdns_services": d.mdns(),
         "ssdp": d.ssdp(),
     }
@@ -181,7 +218,7 @@ def update_device(device_id: int, body: DeviceUpdate, s: Session = Depends(get_s
     d = _get_device(s, device_id)
     data = body.model_dump(exclude_unset=True)
     if "device_type" in data and data["device_type"] not in devicetype.TYPES:
-        raise HTTPException(400, "Geçersiz cihaz tipi")
+        raise err(400, "err.bad_type")
     for k, v in data.items():
         setattr(d, k, (v.strip() or None) if isinstance(v, str) else v)
     s.add(d)
@@ -194,6 +231,7 @@ def delete_device(device_id: int, s: Session = Depends(get_session)):
     d = _get_device(s, device_id)
     for model in (DeviceAlias, Port, Finding, PresenceSample, DeviceEvent):
         s.execute(delete(model).where(model.device_id == device_id))
+    s.execute(delete(MergeSuggestion).where((MergeSuggestion.device_id == device_id) | (MergeSuggestion.candidate_id == device_id)))
     s.delete(d)
     s.commit()
     return {"ok": True}
@@ -208,7 +246,7 @@ def merge(device_id: int, body: MergeBody, s: Session = Depends(get_session)):
     try:
         dst = merge_devices(s, device_id, body.target_id)
     except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        raise err(400, str(exc)) from exc
     s.commit()
     return device_dict(dst)
 
@@ -218,7 +256,7 @@ def split(alias_id: int, s: Session = Depends(get_session)):
     try:
         new = split_alias(s, alias_id)
     except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        raise err(400, str(exc)) from exc
     s.commit()
     return device_dict(new)
 
@@ -238,15 +276,17 @@ class ScanRequest(BaseModel):
 @router.post("/scans")
 def start_scan(body: ScanRequest):
     if body.kind not in ("quick", "deep"):
-        raise HTTPException(400, "kind 'quick' veya 'deep' olmalı")
+        raise err(400, "err.bad_kind")
     if not manager.start_async(body.kind, trigger="manual"):
-        raise HTTPException(409, "Bir tarama zaten çalışıyor")
+        raise err(409, "err.scan_running")
     return {"started": True, "kind": body.kind}
 
 
 @router.get("/scans/status")
 def scan_status():
-    return manager.state | {"running": manager.busy, "next_runs": scheduler.next_runs()}
+    state = dict(manager.state)
+    state["phase"] = i18n.t(state.get("phase") or "phase.done", **(state.get("phase_params") or {}))
+    return state | {"running": manager.busy, "next_runs": scheduler.next_runs()}
 
 
 @router.get("/scans")
@@ -267,7 +307,7 @@ def list_scans(kind: Optional[str] = None, limit: int = 50, s: Session = Depends
 def export_scan(scan_id: int, s: Session = Depends(get_session)):
     sc = s.get(Scan, scan_id)
     if not sc:
-        raise HTTPException(404, "Tarama bulunamadı")
+        raise err(404, "err.scan_not_found")
     diff = s.exec(select(ScanDiff).where(ScanDiff.scan_id == scan_id)).first()
     payload = {
         "id": sc.id, "kind": sc.kind, "started_at": iso(sc.started_at),
@@ -286,7 +326,7 @@ def diff(a: Optional[int] = None, b: Optional[int] = None, s: Session = Depends(
         return {"a": None, "b": None, "changes": []}
     newer = next((x for x in deep if x.id == b), None) if b else deep[0]
     if newer is None:
-        raise HTTPException(404, "Tarama bulunamadı")
+        raise err(404, "err.scan_not_found")
     older = next((x for x in deep if x.id == a), None) if a else next((x for x in deep if x.id < newer.id), None)
     if older is None:
         return {"a": None, "b": newer.id, "changes": []}
@@ -312,7 +352,7 @@ class IgnoreBody(BaseModel):
 def ignore_finding(finding_id: int, body: IgnoreBody, s: Session = Depends(get_session)):
     f = s.get(Finding, finding_id)
     if not f:
-        raise HTTPException(404, "Bulgu bulunamadı")
+        raise err(404, "err.finding_not_found")
     f.ignored = body.ignored
     s.add(f)
     s.commit()
@@ -323,7 +363,7 @@ def ignore_finding(finding_id: int, body: IgnoreBody, s: Session = Depends(get_s
 def resolve_finding(finding_id: int, s: Session = Depends(get_session)):
     f = s.get(Finding, finding_id)
     if not f:
-        raise HTTPException(404, "Bulgu bulunamadı")
+        raise err(404, "err.finding_not_found")
     f.resolved = True
     s.add(f)
     s.commit()
@@ -335,8 +375,8 @@ def score(days: int = 30, s: Session = Depends(get_session)):
     current, counts = compute_score(s)
     since = utcnow() - timedelta(days=days)
     hist = s.exec(select(SecurityScoreHistory).where(SecurityScoreHistory.ts >= since).order_by(SecurityScoreHistory.ts)).all()
-    grade, label = analysis.score_grade(current)
-    return {"score": current, "grade": grade, "label": label, "counts": counts,
+    grade, label_key = analysis.score_grade(current)
+    return {"score": current, "grade": grade, "label": i18n.t(label_key), "counts": counts,
             "history": [{"ts": iso(h.ts), "score": h.score} for h in hist]}
 
 
@@ -391,7 +431,7 @@ def put_settings(values: dict):
     try:
         result = settings_store.update(values)
     except (ValueError, TypeError) as exc:
-        raise HTTPException(400, str(exc)) from exc
+        raise err(400, "err.bad_setting", key=str(exc).split(":")[0]) from exc
     if scheduler.scheduler.running:
         scheduler.configure()
     if "enable_watchdog" in values:
@@ -410,10 +450,10 @@ class TestNotification(BaseModel):
 def test_notification(body: TestNotification):
     urls = settings_store.apprise_url_list(body.urls) if body.urls is not None else None
     if urls is not None and not urls:
-        raise HTTPException(400, "Bildirim adresi girilmemiş")
-    ok = notify.send("Test bildirimi", "Ağ izleyici bildirimleri çalışıyor ✅", "info", urls=urls, background=False)
+        raise err(400, "err.no_urls")
+    ok = notify.send(i18n.t("notify.test_title"), i18n.t("notify.test_body"), "info", urls=urls, background=False)
     if not ok:
-        raise HTTPException(502, "Bildirim gönderilemedi; adresleri ve log'ları kontrol edin")
+        raise err(502, "err.notify_failed")
     return {"ok": True}
 
 
@@ -428,11 +468,11 @@ def _validate_subnet(body: SubnetBody) -> str:
     try:
         net = ipaddress.IPv4Network(body.cidr.strip(), strict=False)
     except ValueError as exc:
-        raise HTTPException(400, "Geçersiz CIDR (ör. 192.168.1.0/24)") from exc
+        raise err(400, "err.bad_cidr") from exc
     if net.prefixlen < 16:
-        raise HTTPException(400, "En fazla /16 büyüklüğünde ağ taranabilir")
+        raise err(400, "err.cidr_too_big")
     if body.mode not in ("auto", "arp", "ping"):
-        raise HTTPException(400, "mode: auto, arp veya ping")
+        raise err(400, "err.bad_mode")
     return str(net)
 
 
@@ -445,7 +485,7 @@ def list_subnets(s: Session = Depends(get_session)):
 def add_subnet(body: SubnetBody, s: Session = Depends(get_session)):
     cidr = _validate_subnet(body)
     if s.exec(select(Subnet).where(Subnet.cidr == cidr)).first():
-        raise HTTPException(409, "Bu ağ zaten ekli")
+        raise err(409, "err.subnet_exists")
     sn = Subnet(cidr=cidr, label=body.label.strip() or cidr, enabled=body.enabled, mode=body.mode)
     s.add(sn)
     s.commit()
@@ -456,7 +496,7 @@ def add_subnet(body: SubnetBody, s: Session = Depends(get_session)):
 def update_subnet(subnet_id: int, body: SubnetBody, s: Session = Depends(get_session)):
     sn = s.get(Subnet, subnet_id)
     if not sn:
-        raise HTTPException(404, "Ağ bulunamadı")
+        raise err(404, "err.subnet_not_found")
     sn.cidr, sn.label, sn.enabled, sn.mode = _validate_subnet(body), body.label.strip() or sn.cidr, body.enabled, body.mode
     s.add(sn)
     s.commit()
@@ -467,7 +507,7 @@ def update_subnet(subnet_id: int, body: SubnetBody, s: Session = Depends(get_ses
 def delete_subnet(subnet_id: int, s: Session = Depends(get_session)):
     sn = s.get(Subnet, subnet_id)
     if not sn:
-        raise HTTPException(404, "Ağ bulunamadı")
+        raise err(404, "err.subnet_not_found")
     for d in s.exec(select(Device).where(Device.subnet_id == subnet_id)):
         d.subnet_id = None
         s.add(d)
@@ -507,7 +547,7 @@ def accept_gateway(body: GatewayBody):
 
     mac = normalize_mac(body.mac)
     if not mac:
-        raise HTTPException(400, "Geçersiz MAC adresi")
+        raise err(400, "err.bad_mac")
     watchdog_service.accept_gateway_mac(mac)
     return {"ok": True, "gateway_mac": mac}
 
@@ -521,7 +561,7 @@ def accept_dhcp(body: DhcpServerBody):
     try:
         ipaddress.IPv4Address(body.server)
     except ValueError as exc:
-        raise HTTPException(400, "Geçersiz IP adresi") from exc
+        raise err(400, "err.bad_ip") from exc
     settings_store.set_raw("dhcp_server_known", body.server)
     return {"ok": True}
 
@@ -533,18 +573,57 @@ def send_report():
     from app.report import send_weekly
 
     if not settings_store.apprise_url_list():
-        raise HTTPException(400, "Önce Ayarlar'dan bir bildirim adresi ekleyin")
+        raise err(400, "err.report_no_target")
     if not send_weekly(templates.env):
-        raise HTTPException(502, "Rapor gönderilemedi")
+        raise err(502, "err.report_failed")
     return {"ok": True}
 
 
 @router.get("/report/preview", response_class=HTMLResponse)
 def preview_report():
+    """E-postanın birebir önizlemesi: bildirimlerle aynı (varsayılan) dilde."""
     from app.main import templates
     from app.report import build, render
 
-    return render(templates.env, build())
+    with i18n.use_lang(i18n.default_language()):
+        return render(templates.env, build())
+
+
+# ------------------------------------------------------------------ gizli MAC eşleşme önerileri
+@router.get("/suggestions")
+def list_suggestions(s: Session = Depends(get_session)):
+    return [suggestion_dict(sg, s) for sg in pending_suggestions(s)]
+
+
+def _get_suggestion(s: Session, suggestion_id: int) -> MergeSuggestion:
+    sg = s.get(MergeSuggestion, suggestion_id)
+    if not sg or sg.status != "pending":
+        raise err(404, "err.suggestion_not_found")
+    return sg
+
+
+@router.post("/suggestions/{suggestion_id}/accept")
+def accept_suggestion(suggestion_id: int, s: Session = Depends(get_session)):
+    """Yeni (gizli MAC) kayıt, önerilen bilinen cihaza birleştirilir."""
+    from app.pipeline import EventSink
+
+    sg = _get_suggestion(s, suggestion_id)
+    try:
+        dst = merge_devices(s, sg.device_id, sg.candidate_id, EventSink())
+    except ValueError as exc:
+        raise err(400, str(exc)) from exc
+    s.commit()
+    return device_dict(dst)
+
+
+@router.post("/suggestions/{suggestion_id}/reject")
+def reject_suggestion(suggestion_id: int, s: Session = Depends(get_session)):
+    """Farklı cihazlar: öneri kapatılır ve bu çift bir daha önerilmez."""
+    sg = _get_suggestion(s, suggestion_id)
+    sg.status = "rejected"
+    s.add(sg)
+    s.commit()
+    return {"ok": True}
 
 
 @router.get("/snapshot")

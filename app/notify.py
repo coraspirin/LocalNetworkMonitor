@@ -59,8 +59,10 @@ def send_batch(items: list[tuple[str, str, str]]) -> None:
     if len(items) == 1:
         send(*items[0])
         return
+    from app.i18n import t
+
     worst = max(items, key=lambda i: ["info", "low", "medium", "high", "critical"].index(i[2]))[2]
-    body = "\n".join(f"{SEVERITY_EMOJI.get(s, '•')} {t}: {b}" for t, b, s in items[:30])
+    body = "\n".join(f"{SEVERITY_EMOJI.get(sev, '•')} {title}: {text}" for title, text, sev in items[:30])
     if len(items) > 30:
-        body += f"\n… ve {len(items) - 30} olay daha"
-    send(f"Ağ izleyici: {len(items)} yeni olay", body, worst)
+        body += "\n" + t("notify.more", n=len(items) - 30)
+    send(t("notify.batch_title", n=len(items)), body, worst)

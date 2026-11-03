@@ -44,7 +44,8 @@ def score_chart(points: list[tuple], width: int = 600, height: int = 120) -> dic
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, s: Session = Depends(get_session)):
-    devices = device_summaries(s)
+    devices = device_summaries(s, include_archived=True)
+    active = [d for d in devices if not d["archived"]]
     score, counts = compute_score(s)
     subnets = s.exec(select(Subnet)).all()
     last_deep = s.exec(select(Scan).where(Scan.kind == "deep", Scan.status == "done").order_by(Scan.id.desc())).first()
@@ -57,8 +58,10 @@ def dashboard(request: Request, s: Session = Depends(get_session)):
         "score": score,
         "grade": analysis.score_grade(score),
         "counts": counts,
-        "online": sum(1 for d in devices if d["online"]),
-        "new_today": sum(1 for d in devices if d["first_seen"] >= iso(utcnow() - timedelta(days=1))),
+        "active_count": len(active),
+        "online": sum(1 for d in active if d["online"]),
+        "new_today": sum(1 for d in active if d["first_seen"] >= iso(utcnow() - timedelta(days=1))),
+        "pending_matches": sum(1 for d in active if d["pending_suggestions"]),
         "last_deep": last_deep,
         "recent": recent,
         "names": names,
@@ -150,7 +153,11 @@ def settings_page(request: Request, s: Session = Depends(get_session)):
 
 @router.get("/report", response_class=HTMLResponse)
 def report_page(request: Request):
-    return _render(request, "report.html", {"has_targets": bool(settings_store.apprise_url_list())})
+    from app import i18n
+
+    names = {"tr": "Türkçe", "en": "English"}
+    return _render(request, "report.html", {"has_targets": bool(settings_store.apprise_url_list()),
+                                            "default_lang_name": names.get(i18n.default_language(), "Türkçe")})
 
 
 __all__ = ["router", "finding_dict"]

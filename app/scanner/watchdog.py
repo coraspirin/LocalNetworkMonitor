@@ -1,4 +1,4 @@
-"""Sürekli izleme: ARP spoofing ve sahte (rogue) DHCP sunucusu tespiti."""
+"""Sürekli izleme: ARP spoofing, sahte (rogue) DHCP sunucusu tespiti ve pasif DHCP parmak izi toplama."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import logging
 import random
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 from app.netutil import normalize_mac
@@ -14,15 +14,24 @@ from app.netutil import normalize_mac
 log = logging.getLogger(__name__)
 
 ALERT_COOLDOWN_S = 3600
+# Kendi DHCP yoklamalarımızın sahte MAC'leri (pasif dinlemede yok sayılır)
+PROBE_MACS: set[str] = set()
 
 
 @dataclass
 class Alert:
-    kind: str  # arp_spoof, gateway_mac_changed, rogue_dhcp, ip_mac_changed
+    kind: str  # arp_spoof, rogue_dhcp, ip_mac_changed
     severity: str
-    message: str
+    msg: str  # i18n kimliği: ev.<msg>
+    params: dict = field(default_factory=dict)
     ip: str | None = None
     mac: str | None = None
+
+    @property
+    def message(self) -> str:
+        from app.i18n import tl
+
+        return tl("tr", f"ev.{self.msg}", **self.params)
 
 
 class ArpDetector:
@@ -53,18 +62,14 @@ class ArpDetector:
                 self.gateway_mac = mac
             elif mac != self.gateway_mac:
                 if self._cooldown_ok(("gw", mac), now):
-                    alerts.append(Alert(
-                        "arp_spoof", "critical",
-                        f"Ağ geçidi ({ip}) için farklı bir MAC adresi yayınlandı: {mac} (beklenen {self.gateway_mac}). "
-                        "Olası ARP spoofing / ortadaki adam saldırısı.",
-                        ip, mac,
-                    ))
+                    alerts.append(Alert("arp_spoof", "critical", "arp_spoof",
+                                        {"ip": ip, "mac": mac, "expected": self.gateway_mac}, ip, mac))
                 return alerts  # gateway tablosunu saldırgan MAC ile güncelleme
 
         previous = self.table.get(ip)
         if previous and previous != mac:
             if self._cooldown_ok(("ipmac", ip, mac), now):
-                alerts.append(Alert("ip_mac_changed", "info", f"{ip} adresinin MAC'i değişti: {previous} → {mac}", ip, mac))
+                alerts.append(Alert("ip_mac_changed", "info", "ip_mac_changed", {"ip": ip, "old": previous, "new": mac}, ip, mac))
         self.table[ip] = mac
         return alerts
 
@@ -80,13 +85,67 @@ def evaluate_dhcp_offers(offers: list[dict], expected_server: str | None) -> lis
     servers = sorted({o["server_id"] for o in offers if o.get("server_id")})
     alerts: list[Alert] = []
     if len(servers) > 1:
-        alerts.append(Alert("rogue_dhcp", "high",
-                            f"Ağda birden fazla DHCP sunucusu yanıt verdi: {', '.join(servers)}. "
-                            "Sahte bir DHCP sunucusu trafiği yönlendirebilir.", servers[-1]))
+        alerts.append(Alert("rogue_dhcp", "high", "rogue_dhcp_multi", {"servers": ", ".join(servers)}, servers[-1]))
     elif servers and expected_server and servers[0] != expected_server:
-        alerts.append(Alert("rogue_dhcp", "high",
-                            f"Beklenmeyen DHCP sunucusu: {servers[0]} (beklenen {expected_server}).", servers[0]))
+        alerts.append(Alert("rogue_dhcp", "high", "rogue_dhcp_unexpected", {"server": servers[0], "expected": expected_server}, servers[0]))
     return alerts
+
+
+# ------------------------------------------------------------------ pasif DHCP parmak izi
+@dataclass
+class DhcpInfo:
+    mac: str
+    hostname: str | None = None
+    vendor_class: str | None = None
+    prl: str | None = None  # "1,121,3,6,..."
+    client_id: str | None = None
+
+
+def _text(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="ignore")
+    value = str(value).strip().strip("\x00")
+    return value[:80] or None
+
+
+def parse_dhcp_options(mac: str, options: list) -> DhcpInfo | None:
+    """scapy DHCP seçenek listesinden ([('message-type', 3), ('hostname', b'x'), ...]) istemci bilgisi çıkarır.
+
+    Yalnızca istemci mesajları (DISCOVER=1, REQUEST=3, INFORM=8) değerlendirilir.
+    """
+    mac = normalize_mac(mac)
+    if not mac:
+        return None
+    opts = {o[0]: o[1] for o in options if isinstance(o, tuple) and len(o) >= 2}
+    if opts.get("message-type") not in (1, 3, 8):
+        return None
+    prl = opts.get("param_req_list")
+    if isinstance(prl, (bytes, bytearray)):
+        prl = list(prl)
+    if isinstance(prl, int):
+        prl = [prl]
+    cid = opts.get("client_id")
+    return DhcpInfo(
+        mac=mac,
+        hostname=_text(opts.get("hostname")),
+        vendor_class=_text(opts.get("vendor_class_id")),
+        prl=",".join(str(int(x)) for x in prl) if prl else None,
+        client_id=cid.hex() if isinstance(cid, (bytes, bytearray)) else _text(cid),
+    )
+
+
+def dhcp_info_from_packet(pkt) -> DhcpInfo | None:
+    from scapy.all import BOOTP, DHCP
+
+    if not pkt.haslayer(DHCP) or not pkt.haslayer(BOOTP) or pkt[BOOTP].op != 1:
+        return None
+    chaddr = bytes(pkt[BOOTP].chaddr)[:6]
+    mac = ":".join(f"{b:02x}" for b in chaddr)
+    if mac in PROBE_MACS:
+        return None
+    return parse_dhcp_options(mac, pkt[DHCP].options)
 
 
 def dhcp_probe(iface: str | None = None, timeout: float = 5.0) -> list[dict]:
@@ -95,6 +154,7 @@ def dhcp_probe(iface: str | None = None, timeout: float = 5.0) -> list[dict]:
 
     conf.checkIPaddr = False
     fake_mac = "02:" + ":".join(f"{random.randint(0, 255):02x}" for _ in range(5))
+    PROBE_MACS.add(fake_mac)
     xid = random.randint(1, 0xFFFFFFFF)
     chaddr = bytes.fromhex(fake_mac.replace(":", "")) + b"\x00" * 10
     pkt = (
@@ -124,11 +184,13 @@ def dhcp_probe(iface: str | None = None, timeout: float = 5.0) -> list[dict]:
 
 
 class ArpWatcher:
-    """Arka planda ARP paketlerini dinler ve uyarıları geri çağırımla iletir."""
+    """Arka planda ARP ve DHCP paketlerini dinler; uyarıları ve DHCP gözlemlerini geri çağırımla iletir."""
 
-    def __init__(self, detector: ArpDetector, on_alert: Callable[[Alert], None], iface: str | None = None):
+    def __init__(self, detector: ArpDetector, on_alert: Callable[[Alert], None], iface: str | None = None,
+                 on_dhcp: Callable[[DhcpInfo], None] | None = None):
         self.detector = detector
         self.on_alert = on_alert
+        self.on_dhcp = on_dhcp
         self.iface = iface
         self._sniffer = None
         self._lock = threading.Lock()
@@ -136,23 +198,33 @@ class ArpWatcher:
     def _handle(self, pkt) -> None:
         from scapy.all import ARP
 
-        if not pkt.haslayer(ARP) or pkt[ARP].op != 2:  # yalnızca is-at (yanıt)
+        if pkt.haslayer(ARP):
+            if pkt[ARP].op != 2:  # yalnızca is-at (yanıt)
+                return
+            with self._lock:
+                alerts = self.detector.observe(pkt[ARP].psrc, pkt[ARP].hwsrc)
+            for a in alerts:
+                try:
+                    self.on_alert(a)
+                except Exception:  # pragma: no cover
+                    log.exception("ARP uyarısı işlenemedi")
             return
-        with self._lock:
-            alerts = self.detector.observe(pkt[ARP].psrc, pkt[ARP].hwsrc)
-        for a in alerts:
+        if self.on_dhcp is not None:
             try:
-                self.on_alert(a)
+                info = dhcp_info_from_packet(pkt)
+                if info:
+                    self.on_dhcp(info)
             except Exception:  # pragma: no cover
-                log.exception("ARP uyarısı işlenemedi")
+                log.exception("DHCP paketi işlenemedi")
 
     def start(self) -> bool:
         try:
             from scapy.all import AsyncSniffer
 
-            self._sniffer = AsyncSniffer(filter="arp", prn=self._handle, store=False, iface=self.iface)
+            flt = "arp or (udp and (port 67 or port 68))" if self.on_dhcp else "arp"
+            self._sniffer = AsyncSniffer(filter=flt, prn=self._handle, store=False, iface=self.iface)
             self._sniffer.start()
-            log.info("ARP izleyici başlatıldı (%s)", self.iface or "varsayılan arayüz")
+            log.info("ARP/DHCP izleyici başlatıldı (%s)", self.iface or "varsayılan arayüz")
             return True
         except Exception as exc:
             log.warning("ARP izleyici başlatılamadı: %s", exc)

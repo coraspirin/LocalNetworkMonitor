@@ -147,11 +147,7 @@ def audit_findings(a: RouterAudit) -> list[tuple[FindingData, str | None]]:
     if not a.igd_found:
         return out
     out.append((
-        FindingData("upnp-enabled", "medium", "Router'da UPnP açık",
-                    "UPnP IGD, ağdaki herhangi bir cihazın (kötü amaçlı yazılım dahil) router'da kimlik doğrulaması olmadan "
-                    "internete port açmasına izin verir." + (f" Model: {a.model}." if a.model else ""),
-                    "Gerekmiyorsa router ayarlarından UPnP'yi kapatın; gerekiyorsa açılan yönlendirmeleri düzenli kontrol edin.",
-                    None, "router"),
+        FindingData("upnp-enabled", "medium", "upnp-enabled", {"model": a.model or ""}, None, "router"),
         a.igd_ip,
     ))
     for m in a.mappings:
@@ -159,12 +155,10 @@ def audit_findings(a: RouterAudit) -> list[tuple[FindingData, str | None]]:
             continue
         risky = m.internal_port in DANGEROUS_INTERNAL_PORTS
         out.append((
-            FindingData(f"wan-forward-{m.protocol.lower()}-{m.external_port}", "high" if risky else "medium",
-                        f"İnternete açık port: {m.protocol} {m.external_port} → {m.internal_client}:{m.internal_port}",
-                        f"UPnP ile oluşturulmuş yönlendirme ({m.description or 'açıklama yok'}). "
-                        f"Bu servis{' (' + a.external_ip + ' üzerinden)' if a.external_ip else ''} internetten erişilebilir.",
-                        "Bu yönlendirmeyi tanımıyorsanız kaldırın ve ilgili cihazı inceleyin.",
-                        m.internal_port, "router"),
+            FindingData("wan-forward", "high" if risky else "medium", "wan-forward",
+                        {"proto": m.protocol, "ext": m.external_port, "client": m.internal_client, "iport": m.internal_port,
+                         "desc": m.description, "ext_ip": a.external_ip or ""},
+                        m.internal_port, "router", ident=f"{m.protocol.lower()}-{m.external_port}"),
             m.internal_client or None,
         ))
     return out

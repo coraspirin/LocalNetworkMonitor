@@ -39,7 +39,37 @@ def set_engine(engine) -> None:
 def init_db() -> None:
     from app import models  # noqa: F401  (tabloları kaydeder)
 
-    SQLModel.metadata.create_all(get_engine())
+    engine = get_engine()
+    SQLModel.metadata.create_all(engine)
+    migrate(engine)
+
+
+def migrate(engine) -> list[str]:
+    """Eski veritabanlarına yeni eklenen sütunları ekler (SQLite ALTER TABLE ADD COLUMN)."""
+    from sqlalchemy import inspect, text
+
+    added: list[str] = []
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in SQLModel.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            existing = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in existing:
+                    continue
+                coltype = col.type.compile(dialect=engine.dialect)
+                default = col.default.arg if col.default is not None and not callable(col.default.arg) else None
+                ddl = f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {coltype}'
+                if isinstance(default, bool):
+                    ddl += f" DEFAULT {int(default)}"
+                elif isinstance(default, (int, float)):
+                    ddl += f" DEFAULT {default}"
+                elif isinstance(default, str):
+                    ddl += " DEFAULT '" + default.replace("'", "''") + "'"
+                conn.execute(text(ddl))
+                added.append(f"{table.name}.{col.name}")
+    return added
 
 
 @contextmanager

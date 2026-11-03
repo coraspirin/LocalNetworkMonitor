@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     report_weekday: str = "mon"
     report_hour: int = 9
 
+    # Varsayılan dil (tr / en): bildirimler, rapor ve dil seçmemiş ziyaretçiler
+    default_language: str = "tr"
+    # Gizli MAC'li yeni cihaz bildirimi: smart / always / never
+    random_mac_notify: str = "smart"
+
     # Arayüzde ve zamanlanmış işlerde kullanılan saat dilimi
     tz: str = "Europe/Istanbul"
 

@@ -3,16 +3,16 @@
     <div>
       <span class="badge sev-{{ f.severity }}">{{ f.severity | sev }}</span>
       <span class="title">{{ f.title }}</span>
-      {% if f.port %}<span class="muted small mono">port {{ f.port }}</span>{% endif %}
-      {% if f.ignored %}<span class="badge">yoksayıldı</span>{% endif %}
+      {% if f.port %}<span class="muted small mono">{{ t('common.port', port=f.port) }}</span>{% endif %}
+      {% if f.ignored %}<span class="badge">{{ t('finding.ignored') }}</span>{% endif %}
     </div>
     <div class="toolbar">
-      <button class="btn small" data-ignore="{{ f.id }}" data-value="{{ 'false' if f.ignored else 'true' }}">{{ 'Geri al' if f.ignored else 'Yoksay' }}</button>
-      {% if f.source == 'watchdog' %}<button class="btn small" data-resolve="{{ f.id }}">Çözüldü</button>{% endif %}
+      <button class="btn small" data-ignore="{{ f.id }}" data-value="{{ 'false' if f.ignored else 'true' }}">{{ t('finding.unignore') if f.ignored else t('finding.ignore') }}</button>
+      {% if f.source == 'watchdog' %}<button class="btn small" data-resolve="{{ f.id }}">{{ t('finding.resolve') }}</button>{% endif %}
     </div>
   </div>
   {% if f.description %}<p>{{ f.description }}</p>{% endif %}
-  {% if f.remediation %}<p class="small"><strong>Öneri:</strong> {{ f.remediation }}</p>{% endif %}
+  {% if f.remediation %}<p class="small"><strong>{{ t('finding.fix') }}</strong> {{ f.remediation }}</p>{% endif %}
   {% if f.cves %}
   <div class="cves">
     {% for c in f.cves[:12] %}
@@ -22,5 +22,5 @@
     {% if f.cves | length > 12 %}<span class="muted small">+{{ f.cves | length - 12 }}</span>{% endif %}
   </div>
   {% endif %}
-  <div class="muted small" style="margin-top:6px">İlk görülme {{ f.first_seen | localtime }} · kaynak: {{ f.source }}</div>
+  <div class="muted small" style="margin-top:6px">{{ t('common.first_seen_at', ts=f.first_seen | localtime) }} · {{ t('common.source') }}: {{ f.source }}</div>
 </div>

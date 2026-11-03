@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
+# tip -> simge (etiketler i18n kataloğunda: type.<tip>)
 TYPES = {
-    "router": ("Router / Ağ cihazı", "🌐"),
-    "phone": ("Telefon / Tablet", "📱"),
-    "computer": ("Bilgisayar", "💻"),
-    "printer": ("Yazıcı", "🖨️"),
-    "tv": ("TV / Medya oynatıcı", "📺"),
-    "speaker": ("Hoparlör", "🔊"),
-    "camera": ("Kamera", "📷"),
-    "nas": ("NAS / Sunucu", "🗄️"),
-    "gaming": ("Oyun konsolu", "🎮"),
-    "iot": ("Akıllı ev / IoT", "🔌"),
-    "unknown": ("Bilinmiyor", "❔"),
+    "router": "🌐",
+    "phone": "📱",
+    "computer": "💻",
+    "printer": "🖨️",
+    "tv": "📺",
+    "speaker": "🔊",
+    "camera": "📷",
+    "nas": "🗄️",
+    "gaming": "🎮",
+    "iot": "🔌",
+    "unknown": "❔",
 }
 
 VENDOR_HINTS = [
@@ -58,6 +59,8 @@ def classify(
     ssdp: dict | None = None,
     hostname: str | None = None,
     is_gateway: bool = False,
+    os_family: str | None = None,
+    is_random_mac: bool = False,
 ) -> str:
     if is_gateway:
         return "router"
@@ -112,7 +115,20 @@ def classify(
     if t:
         return t
 
-    # 5) üretici
+    # 5) DHCP parmak izi (gizli MAC'li cihazlarda üretici bilgisi yoktur)
+    if os_family == "android":
+        return "phone"
+    if os_family == "apple":
+        # 62078 (iOS lockdownd) veya gizli MAC → büyük olasılıkla iPhone/iPad
+        return "phone" if (62078 in ports or is_random_mac) else "computer"
+    if os_family == "windows":
+        return "computer"
+    if os_family == "embedded":
+        return "iot"
+    if 62078 in ports:
+        return "phone"
+
+    # 6) üretici
     vt = _match(vendor or "", VENDOR_HINTS)
     if vt:
         return vt
@@ -124,8 +140,10 @@ def classify(
 
 
 def label(device_type: str) -> str:
-    return TYPES.get(device_type, TYPES["unknown"])[0]
+    from app.i18n import t
+
+    return t(f"type.{device_type if device_type in TYPES else 'unknown'}")
 
 
 def icon(device_type: str) -> str:
-    return TYPES.get(device_type, TYPES["unknown"])[1]
+    return TYPES.get(device_type, TYPES["unknown"])

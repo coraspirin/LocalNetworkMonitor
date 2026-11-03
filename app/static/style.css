@@ -190,3 +190,14 @@ dl.kv dd { margin: 0; overflow-wrap: anywhere; }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
 
 .login-box { max-width: 360px; margin: 12vh auto; }
+
+/* dil seçici */
+.lang-switch { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-size: 12px; font-weight: 600; }
+.lang-switch a { padding: 4px 8px; color: var(--muted); }
+.lang-switch a:hover { text-decoration: none; background: var(--panel-2); }
+.lang-switch a.active { background: var(--accent); color: var(--accent-text); }
+
+/* eşleşme önerisi */
+.card.suggestion { border-color: var(--sev-low); border-width: 1px 1px 1px 4px; }
+.card.suggestion h2 { margin-bottom: 6px; }
+.card.suggestion p { margin: 4px 0 10px; }

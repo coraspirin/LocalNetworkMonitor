@@ -26,6 +26,14 @@ EDITABLE: dict[str, type] = {
     "apprise_urls": str,
     "report_weekday": str,
     "report_hour": int,
+    "default_language": str,
+    "random_mac_notify": str,
+}
+
+CHOICES: dict[str, tuple[str, ...]] = {
+    "default_language": ("tr", "en"),
+    "random_mac_notify": ("smart", "always", "never"),
+    "report_weekday": ("mon", "tue", "wed", "thu", "fri", "sat", "sun"),
 }
 
 
@@ -45,7 +53,10 @@ def get(key: str, session: Session | None = None) -> Any:
 
     def _read(s: Session):
         row = s.get(Setting, key)
-        return _coerce(row.value, typ) if row is not None else default
+        value = _coerce(row.value, typ) if row is not None else default
+        if key in CHOICES and value not in CHOICES[key]:
+            return CHOICES[key][0]
+        return value
 
     if session is not None:
         return _read(session)
@@ -63,9 +74,14 @@ def update(values: dict[str, Any]) -> dict[str, Any]:
         for key, raw in values.items():
             if key not in EDITABLE:
                 continue
-            value = _coerce(raw, EDITABLE[key])
+            try:
+                value = _coerce(raw, EDITABLE[key])
+            except (TypeError, ValueError):
+                raise ValueError(key) from None
             if EDITABLE[key] is int and value < 0:
-                raise ValueError(f"{key} negatif olamaz")
+                raise ValueError(key)
+            if key in CHOICES and value not in CHOICES[key]:
+                raise ValueError(key)
             row = s.get(Setting, key) or Setting(key=key)
             row.value = str(value)
             s.add(row)

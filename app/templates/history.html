@@ -1,20 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Geçmiş{% endblock %}
+{% block title %}{{ t('hist.title') }}{% endblock %}
 {% block content %}
-{% set KIND_LABELS = {'joined': 'Yeni cihaz', 'left': 'Ayrıldı', 'returned': 'Geri döndü', 'ip_changed': 'IP değişti', 'port_opened': 'Port açıldı', 'port_closed': 'Port kapandı', 'finding': 'Bulgu', 'arp_spoof': 'ARP spoofing', 'rogue_dhcp': 'Sahte DHCP', 'merged': 'Birleştirildi', 'ip_mac_changed': 'IP/MAC değişti'} %}
 <div class="page-head">
-  <div><h1>Geçmiş</h1><div class="muted">Taramalar ve ağ olayları</div></div>
-  <div class="toolbar"><a class="btn small" href="/diff">Taramaları karşılaştır →</a></div>
+  <div><h1>{{ t('hist.title') }}</h1><div class="muted">{{ t('hist.subtitle') }}</div></div>
+  <div class="toolbar"><a class="btn small" href="/diff">{{ t('hist.compare') }}</a></div>
 </div>
 
 <div class="grid cols-3-1">
   <div class="card">
     <div class="page-head" style="margin-bottom:8px">
-      <h2 style="margin:0">Olay zaman çizelgesi</h2>
+      <h2 style="margin:0">{{ t('hist.timeline') }}</h2>
       <form method="get" class="toolbar">
-        <select name="kind" onchange="this.form.submit()" aria-label="Olay türü">
-          <option value="">Tüm olaylar</option>
-          {% for k in kinds %}<option value="{{ k }}" {{ 'selected' if k == kind }}>{{ KIND_LABELS.get(k, k) }}</option>{% endfor %}
+        <select name="kind" onchange="this.form.submit()" aria-label="{{ t('hist.col_kind') }}">
+          <option value="">{{ t('hist.all_events') }}</option>
+          {% for k in kinds %}<option value="{{ k }}" {{ 'selected' if k == kind }}>{{ t('evk.' ~ k) }}</option>{% endfor %}
         </select>
       </form>
     </div>
@@ -24,35 +23,35 @@
       <li>
         <time>{{ e.ts | localtime }}</time>
         <div>
-          <span class="badge {{ 'sev-' ~ e.severity if e.severity != 'info' }}">{{ KIND_LABELS.get(e.kind, e.kind) }}</span>
-          {% if e.device_id %}<a href="/devices/{{ e.device_id }}">{{ names.get(e.device_id, 'Silinmiş cihaz') }}</a> — {% endif %}{{ e.message }}
+          <span class="badge {{ 'sev-' ~ e.severity if e.severity != 'info' }}">{{ t('evk.' ~ e.kind) }}</span>
+          {% if e.device_id %}<a href="/devices/{{ e.device_id }}">{{ names.get(e.device_id, t('common.deleted_device')) }}</a> — {% endif %}{{ event_text(e.kind, e.params, e.message) }}
         </div>
       </li>
       {% endfor %}
     </ul>
-    {% else %}<div class="empty">Olay yok.</div>{% endif %}
+    {% else %}<div class="empty">{{ t('dev.no_events') }}</div>{% endif %}
   </div>
 
   <div class="card">
-    <h2>Taramalar</h2>
+    <h2>{{ t('hist.scans') }}</h2>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Zaman</th><th>Tür</th><th>Host</th><th></th></tr></thead>
+        <thead><tr><th>{{ t('hist.col_time') }}</th><th>{{ t('hist.col_kind') }}</th><th>{{ t('hist.col_hosts') }}</th><th></th></tr></thead>
         <tbody>
         {% for sc in scans %}
           <tr>
-            <td class="nowrap small">{{ sc.started_at | localtime('%d.%m %H:%M') }}</td>
-            <td>{{ 'Derin' if sc.kind == 'deep' else 'Hızlı' }}{% if sc.status != 'done' %} <span class="badge {{ 'sev-high' if sc.status == 'failed' }}" title="{{ sc.error or '' }}">{{ 'hata' if sc.status == 'failed' else 'sürüyor' }}</span>{% endif %}</td>
+            <td class="nowrap small">{{ sc.started_at | localtime('short') }}</td>
+            <td>{{ t('hist.deep') if sc.kind == 'deep' else t('hist.quick') }}{% if sc.status != 'done' %} <span class="badge {{ 'sev-high' if sc.status == 'failed' }}" title="{{ sc.error or '' }}">{{ t('hist.failed') if sc.status == 'failed' else t('hist.running') }}</span>{% endif %}</td>
             <td>{{ sc.hosts_found }}</td>
             <td class="nowrap small">
               {% if sc.kind == 'deep' and sc.status == 'done' %}
-                <a href="/diff?b={{ sc.id }}">{{ diffs.get(sc.id, 0) }} fark</a> ·
+                <a href="/diff?b={{ sc.id }}">{{ t('hist.n_changes', n=diffs.get(sc.id, 0)) }}</a> ·
                 <a href="/api/scans/{{ sc.id }}/export.json">JSON</a>
               {% endif %}
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="4" class="muted">Tarama yok.</td></tr>
+          <tr><td colspan="4" class="muted">{{ t('hist.no_scans') }}</td></tr>
         {% endfor %}
         </tbody>
       </table>

@@ -54,11 +54,16 @@ class Device(SQLModel, table=True):
     is_gateway: bool = False
 
     mdns_name: Optional[str] = None
+    dhcp_hostname: Optional[str] = None
+    dhcp_fp: Optional[str] = None  # "option55|vendor_class" (MAC değişse de sabit kalır)
+    os_family: Optional[str] = None  # DHCP parmak izinden: apple, android, windows, linux, embedded
     mdns_services: str = "[]"  # JSON
     ssdp_info: str = "{}"  # JSON
     netbios_name: Optional[str] = None
 
     online: bool = True
+    archived: bool = False
+    notify_pending: bool = False  # gizli MAC'li yeni cihaz: bildirim bir sonraki taramaya ertelendi
     missed_scans: int = 0
     last_rtt_ms: Optional[float] = None
     first_seen: datetime = Field(default_factory=utcnow)
@@ -71,6 +76,7 @@ class Device(SQLModel, table=True):
             self.name
             or self.mdns_name
             or self.hostname
+            or self.dhcp_hostname
             or self.netbios_name
             or self.ssdp().get("friendlyName")
             or self.vendor
@@ -128,9 +134,11 @@ class Finding(SQLModel, table=True):
     key: str = Field(index=True, unique=True)
     device_id: Optional[int] = Field(default=None, foreign_key="device.id", index=True)
     severity: str = "info"
-    title: str
+    title: str  # Türkçe yedek metin (eski kayıtlar / katalog dışı)
     description: str = ""
     remediation: str = ""
+    msg_id: Optional[str] = None  # i18n katalog kimliği (f.<msg_id>.title ...)
+    params: str = "{}"  # JSON, mesaj parametreleri
     source: str = "rule"  # rule, nse, router, watchdog
     cves: str = "[]"  # JSON
     port: Optional[int] = None
@@ -173,7 +181,8 @@ class DeviceEvent(SQLModel, table=True):
     ts: datetime = Field(default_factory=utcnow, index=True)
     kind: str  # joined, left, returned, ip_changed, port_opened, port_closed, finding, arp_spoof, rogue_dhcp, merged
     severity: str = "info"
-    message: str = ""
+    message: str = ""  # Türkçe yedek metin
+    params: str = "{}"  # JSON; mesaj etkin dilde bu parametrelerden üretilir
 
 
 class PresenceSample(SQLModel, table=True):
@@ -194,3 +203,34 @@ class SecurityScoreHistory(SQLModel, table=True):
 class Setting(SQLModel, table=True):
     key: str = Field(primary_key=True)
     value: str = ""
+
+
+class DhcpObservation(SQLModel, table=True):
+    """Pasif dinlenen DHCP isteklerinden toplanan bilgiler (MAC başına son durum)."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    mac: str = Field(index=True, unique=True)
+    hostname: Optional[str] = None
+    vendor_class: Optional[str] = None
+    prl: Optional[str] = None  # option 55, virgüllü
+    client_id: Optional[str] = None
+    os_family: Optional[str] = None
+    ts: datetime = Field(default_factory=utcnow)
+
+    @property
+    def fingerprint(self) -> str | None:
+        if not self.prl and not self.vendor_class:
+            return None
+        return f"{self.prl or ''}|{self.vendor_class or ''}"
+
+
+class MergeSuggestion(SQLModel, table=True):
+    """Gizli MAC'li yeni kaydın (device_id) bilinen bir cihazla (candidate_id) aynı olabileceği önerisi."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    device_id: int = Field(foreign_key="device.id", index=True)
+    candidate_id: int = Field(foreign_key="device.id", index=True)
+    score: int = 0
+    reasons: str = "[]"  # JSON, reason.<kod> listesi
+    status: str = "pending"  # pending, accepted, rejected
+    created_at: datetime = Field(default_factory=utcnow)

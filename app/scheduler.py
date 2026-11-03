@@ -15,7 +15,7 @@ from app import settings_store
 from app.config import get_settings
 from app.db import session_scope
 from app.models import DeviceEvent, PresenceSample, utcnow
-from app.pipeline import manager
+from app.pipeline import archive_stale, manager
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +29,9 @@ def cleanup() -> None:
     with session_scope() as s:
         s.execute(delete(PresenceSample).where(PresenceSample.ts < cutoff))
         s.execute(delete(DeviceEvent).where(DeviceEvent.ts < utcnow() - timedelta(days=max(days, 90))))
+        archived = archive_stale(s)
+    if archived:
+        log.info("%d eski gizli MAC kaydı arşivlendi", archived)
     log.info("%d günden eski varlık örnekleri silindi", days)
 
 

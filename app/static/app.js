@@ -18,6 +18,13 @@
     return data;
   }
 
+  // Çeviri: window.NS_I18N (base.html) içindeki "js.*" anahtarları
+  function t(key, params) {
+    let text = (window.NS_I18N && window.NS_I18N[key]) || key;
+    if (params) Object.keys(params).forEach((k) => { text = text.split("{" + k + "}").join(String(params[k])); });
+    return text;
+  }
+
   let toastTimer;
   function toast(msg) {
     const el = document.getElementById("toast");
@@ -40,11 +47,11 @@
         box.classList.toggle("show", !!st.running);
         const phase = box.querySelector(".phase");
         const fill = box.querySelector(".bar > span");
-        if (phase) phase.textContent = st.running ? (st.phase || "Taranıyor") + (st.total ? ` (${st.done || 0}/${st.total})` : "") : "";
+        if (phase) phase.textContent = st.running ? (st.phase || t("scanning")) + (st.total ? ` (${st.done || 0}/${st.total})` : "") : "";
         if (fill) fill.style.width = st.total ? Math.round(((st.done || 0) * 100) / st.total) + "%" : "15%";
       }
       if (wasRunning && !st.running) {
-        toast(st.error ? "Tarama hatası: " + st.error : "Tarama tamamlandı");
+        toast(st.error ? t("scan_error", { error: st.error }) : t("scan_done"));
         if (document.body.dataset.reloadOnScan === "1") setTimeout(() => location.reload(), 800);
       }
       wasRunning = st.running;
@@ -59,7 +66,7 @@
   async function startScan(kind) {
     try {
       await api("POST", "/api/scans", { kind });
-      toast(kind === "deep" ? "Derin tarama başlatıldı (birkaç dakika sürebilir)" : "Hızlı keşif başlatıldı");
+      toast(kind === "deep" ? t("deep_started") : t("quick_started"));
       wasRunning = true;
       setTimeout(pollStatus, 500);
     } catch (e) {
@@ -77,5 +84,5 @@
 
   document.addEventListener("DOMContentLoaded", pollStatus);
 
-  window.NS = { api, toast, startScan };
+  window.NS = { api, toast, startScan, t };
 })();

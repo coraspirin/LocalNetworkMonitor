@@ -1,42 +1,42 @@
 {% extends "base.html" %}
-{% block title %}Cihazlar{% endblock %}
+{% block title %}{{ t('dash.title') }}{% endblock %}
 {% block body_attrs %}data-reload-on-scan="1"{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Ağdaki cihazlar</h1>
+    <h1>{{ t('dash.heading') }}</h1>
     <div class="muted">
-      {% if last_deep %}Son derin tarama: {{ last_deep.finished_at | localtime }}{% else %}Henüz derin tarama yapılmadı — sağ üstten “Derin tara” ile başlatın.{% endif %}
+      {% if last_deep %}{{ t('dash.last_deep', ts=last_deep.finished_at | localtime) }}{% else %}{{ t('dash.no_deep') }}{% endif %}
     </div>
   </div>
   <div class="toolbar">
-    <a class="btn small" href="/api/export/devices.csv">CSV indir</a>
-    <a class="btn small" href="/api/export/devices.json">JSON indir</a>
+    <a class="btn small" href="/api/export/devices.csv">{{ t('dash.csv') }}</a>
+    <a class="btn small" href="/api/export/devices.json">{{ t('dash.json') }}</a>
   </div>
 </div>
 
 <div class="grid cols-4">
   <div class="card stat">
-    <div class="label">Toplam cihaz</div>
-    <div class="value">{{ devices | length }}</div>
-    <div class="sub">{{ new_today }} yeni (son 24 saat)</div>
+    <div class="label">{{ t('dash.total') }}</div>
+    <div class="value">{{ active_count }}</div>
+    <div class="sub">{{ t('dash.new_24h', n=new_today) }}</div>
   </div>
   <div class="card stat">
-    <div class="label">Çevrimiçi</div>
+    <div class="label">{{ t('dash.online') }}</div>
     <div class="value">{{ online }}</div>
-    <div class="sub">{{ devices | length - online }} çevrimdışı</div>
+    <div class="sub">{{ t('dash.offline_n', n=active_count - online) }}</div>
   </div>
   <a class="card stat" href="/security" style="color:inherit;text-decoration:none">
-    <div class="label">Güvenlik skoru</div>
+    <div class="label">{{ t('dash.score') }}</div>
     <div class="value grade-{{ grade[0] }}">{{ score }} <span class="small">/ 100 · {{ grade[0] }}</span></div>
-    <div class="sub">{{ grade[1] }}</div>
+    <div class="sub">{{ t(grade[1]) }}</div>
   </a>
   <a class="card stat" href="/security" style="color:inherit;text-decoration:none">
-    <div class="label">Açık bulgular</div>
+    <div class="label">{{ t('dash.open_findings') }}</div>
     <div class="value">{{ counts.values() | sum }}</div>
     <div class="sub">
       {% for sev in ['critical', 'high', 'medium', 'low'] %}{% if counts.get(sev) %}<span class="badge sev-{{ sev }}">{{ counts[sev] }} {{ sev | sev }}</span> {% endif %}{% endfor %}
-      {% if not counts %}Bulgu yok{% endif %}
+      {% if not counts %}{{ t('dash.no_findings') }}{% endif %}
     </div>
   </a>
 </div>
@@ -44,74 +44,77 @@
 <div class="grid cols-3-1" style="margin-top:16px">
   <div class="card">
     <div class="toolbar" style="margin-bottom:12px">
-      <input type="search" id="f-q" placeholder="Ara: ad, IP, MAC, üretici…" style="flex:1;min-width:180px">
-      <select id="f-subnet" aria-label="Ağ">
-        <option value="">Tüm ağlar</option>
+      <input type="search" id="f-q" placeholder="{{ t('dash.search') }}" style="flex:1;min-width:180px">
+      <select id="f-subnet" aria-label="{{ t('dev.subnet') }}">
+        <option value="">{{ t('dash.all_subnets') }}</option>
         {% for sn in subnets %}<option value="{{ sn.id }}">{{ sn.label }} ({{ sn.cidr }})</option>{% endfor %}
       </select>
-      <select id="f-status" aria-label="Durum">
-        <option value="">Tümü</option>
-        <option value="on">Çevrimiçi</option>
-        <option value="off">Çevrimdışı</option>
-        <option value="untrusted">Güvenilmeyen</option>
-        <option value="risk">Riskli</option>
+      <select id="f-status" aria-label="{{ t('common.all') }}">
+        <option value="">{{ t('common.all') }}</option>
+        <option value="on">{{ t('dash.f_online') }}</option>
+        <option value="off">{{ t('dash.f_offline') }}</option>
+        <option value="untrusted">{{ t('dash.f_untrusted') }}</option>
+        <option value="risk">{{ t('dash.f_risk') }}</option>
+        <option value="match">{{ t('dash.f_suggest') }}{% if pending_matches %} ({{ pending_matches }}){% endif %}</option>
+        <option value="archived">{{ t('dash.f_archived') }}</option>
       </select>
     </div>
     {% if devices %}
     <div class="table-wrap">
       <table id="devices">
         <thead>
-          <tr><th>Cihaz</th><th>IP</th><th>MAC</th><th>Üretici</th><th>Port</th><th>Risk</th><th class="nowrap">Son görülme</th></tr>
+          <tr><th>{{ t('dash.col_device') }}</th><th>{{ t('dash.col_ip') }}</th><th>{{ t('dash.col_mac') }}</th><th>{{ t('dash.col_vendor') }}</th><th>{{ t('dash.col_ports') }}</th><th>{{ t('dash.col_risk') }}</th><th class="nowrap">{{ t('dash.col_last_seen') }}</th></tr>
         </thead>
         <tbody>
         {% for d in devices %}
           <tr class="{{ 'offline' if not d.online }}"
-              data-search="{{ [d.name, d.ip, d.mac, d.vendor, d.hostname, d.type_label, d.location, d.owner] | select | join(' ') | lower }}"
-              data-subnet="{{ d.subnet_id or '' }}" data-online="{{ 1 if d.online else 0 }}"
-              data-trusted="{{ 1 if d.trusted else 0 }}" data-risk="{{ d.worst_severity or '' }}">
+              data-search="{{ [d.name, d.ip, d.mac, d.vendor, d.hostname, d.dhcp_hostname, d.type_label, d.location, d.owner] | select | join(' ') | lower }}"
+              data-subnet="{{ d.subnet_id or '' }}" data-online="{{ 1 if d.online else 0 }}" data-archived="{{ 1 if d.archived else 0 }}"
+              data-trusted="{{ 1 if d.trusted else 0 }}" data-risk="{{ d.worst_severity or '' }}" data-match="{{ 1 if d.pending_suggestions else 0 }}">
             <td class="name-cell">
-              <span class="dot {{ 'on' if d.online }}" title="{{ 'Çevrimiçi' if d.online else 'Çevrimdışı' }}"></span>
+              <span class="dot {{ 'on' if d.online }}" title="{{ t('common.online') if d.online else t('common.offline') }}"></span>
               <span title="{{ d.type_label }}">{{ d.icon }}</span>
               <a href="/devices/{{ d.id }}"><strong>{{ d.name }}</strong></a>
-              {% if d.is_gateway %}<span class="badge">ağ geçidi</span>{% endif %}
-              {% if not d.trusted %}<span class="badge" title="Henüz güvenilir olarak işaretlenmedi">yeni</span>{% endif %}
+              {% if d.is_gateway %}<span class="badge">{{ t('common.gateway') }}</span>{% endif %}
+              {% if d.pending_suggestions %}<span class="badge sev-low" title="{{ t('dash.match_tip') }}">{{ t('dash.match_badge') }}</span>{% endif %}
+              {% if d.archived %}<span class="badge">{{ t('dev.archived_badge') }}</span>{% elif not d.trusted %}<span class="badge" title="{{ t('dash.untrusted_tip') }}">{{ t('common.new') }}</span>{% endif %}
               {% if d.location %}<div class="muted small">{{ d.location }}</div>{% endif %}
             </td>
             <td class="mono nowrap">{{ d.ip or '—' }}</td>
-            <td class="mono nowrap">{{ d.mac or '—' }}{% if d.is_random_mac %} <span class="badge" title="Gizli / rastgele MAC adresi">gizli</span>{% endif %}</td>
-            <td>{{ d.vendor or '—' }}</td>
+            <td class="mono nowrap">{{ d.mac or '—' }}{% if d.is_random_mac %} <span class="badge" title="{{ t('dash.hidden_mac_tip') }}">{{ t('common.hidden_mac') }}</span>{% endif %}</td>
+            <td>{{ d.vendor or d.os_family_label or '—' }}</td>
             <td>{{ d.open_ports or '—' }}</td>
             <td>{% if d.worst_severity %}<span class="badge sev-{{ d.worst_severity }}">{{ d.worst_severity | sev }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
-            <td class="nowrap muted">{{ d.last_seen | localtime('%d.%m %H:%M') }}</td>
+            <td class="nowrap muted">{{ d.last_seen | localtime('short') }}</td>
           </tr>
         {% endfor %}
         </tbody>
       </table>
     </div>
-    <div id="no-match" class="empty" hidden>Filtreye uyan cihaz yok.</div>
+    <div id="no-match" class="empty" hidden>{{ t('dash.no_match') }}</div>
     {% else %}
-    <div class="empty">Henüz cihaz bulunmadı. İlk tarama birkaç saniye içinde başlar; dilerseniz “Hızlı keşif” düğmesini kullanın.</div>
+    <div class="empty">{{ t('dash.empty') }}</div>
     {% endif %}
   </div>
 
   <div class="card">
-    <h2>Son olaylar</h2>
+    <h2>{{ t('dash.recent') }}</h2>
     {% if recent %}
     <ul class="events">
       {% for e in recent %}
       <li>
-        <time>{{ e.ts | localtime('%d.%m %H:%M') }}</time>
+        <time>{{ e.ts | localtime('short') }}</time>
         <div>
           {% if e.severity in ('medium', 'high', 'critical') %}<span class="badge sev-{{ e.severity }}">{{ e.severity | sev }}</span>{% endif %}
-          {% if e.device_id %}<a href="/devices/{{ e.device_id }}">{{ names.get(e.device_id, 'Cihaz') }}</a>:{% endif %}
-          {{ e.message }}
+          {% if e.device_id %}<a href="/devices/{{ e.device_id }}">{{ names.get(e.device_id, t('common.device')) }}</a>:{% endif %}
+          {{ event_text(e.kind, e.params, e.message) }}
         </div>
       </li>
       {% endfor %}
     </ul>
-    <p><a href="/history">Tüm geçmiş →</a></p>
+    <p><a href="/history">{{ t('common.all_history') }}</a></p>
     {% else %}
-    <div class="empty">Henüz olay yok.</div>
+    <div class="empty">{{ t('dash.no_events') }}</div>
     {% endif %}
   </div>
 </div>
@@ -128,12 +131,15 @@
     const term = (q.value || "").toLowerCase().trim();
     let shown = 0;
     rows.forEach((r) => {
-      let ok = !term || r.dataset.search.includes(term);
+      const archived = r.dataset.archived === "1";
+      let ok = st.value === "archived" ? archived : !archived;
+      if (ok && term) ok = r.dataset.search.includes(term);
       if (ok && sn.value) ok = r.dataset.subnet === sn.value;
       if (ok && st.value === "on") ok = r.dataset.online === "1";
       if (ok && st.value === "off") ok = r.dataset.online === "0";
       if (ok && st.value === "untrusted") ok = r.dataset.trusted === "0";
       if (ok && st.value === "risk") ok = RISKY.includes(r.dataset.risk);
+      if (ok && st.value === "match") ok = r.dataset.match === "1";
       r.hidden = !ok;
       if (ok) shown++;
     });

@@ -1,28 +1,32 @@
 <!doctype html>
-<html lang="tr">
+<html lang="{{ get_lang() }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Ağ İzleyici{% endblock %} · Local Network Monitor</title>
+  <title>{% block title %}{{ t('app.name') }}{% endblock %} · Local Network Monitor</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛰️</text></svg>">
   <link rel="stylesheet" href="/static/style.css">
+  <script>window.NS_I18N = {{ js_catalog() | safe }};</script>
   <script src="/static/app.js" defer></script>
 </head>
 <body {% block body_attrs %}{% endblock %}>
   <header class="topbar">
-    <a class="brand" href="/">🛰️ Ağ İzleyici</a>
+    <a class="brand" href="/">🛰️ {{ t('app.name') }}</a>
     <nav class="nav">
-      <a href="/" class="{{ 'active' if nav == 'dashboard' }}">Cihazlar</a>
-      <a href="/map" class="{{ 'active' if nav == 'map' }}">Harita</a>
-      <a href="/security" class="{{ 'active' if nav == 'security' }}">Güvenlik</a>
-      <a href="/history" class="{{ 'active' if nav in ('history', 'diff') }}">Geçmiş</a>
-      <a href="/report" class="{{ 'active' if nav == 'report' }}">Rapor</a>
-      <a href="/settings" class="{{ 'active' if nav == 'settings' }}">Ayarlar</a>
+      <a href="/" class="{{ 'active' if nav == 'dashboard' }}">{{ t('nav.devices') }}</a>
+      <a href="/map" class="{{ 'active' if nav == 'map' }}">{{ t('nav.map') }}</a>
+      <a href="/security" class="{{ 'active' if nav == 'security' }}">{{ t('nav.security') }}</a>
+      <a href="/history" class="{{ 'active' if nav in ('history', 'diff') }}">{{ t('nav.history') }}</a>
+      <a href="/report" class="{{ 'active' if nav == 'report' }}">{{ t('nav.report') }}</a>
+      <a href="/settings" class="{{ 'active' if nav == 'settings' }}">{{ t('nav.settings') }}</a>
     </nav>
     <div class="right">
       <div id="scan-progress" class="progress"><div class="spinner"></div><span class="phase"></span><div class="bar"><span></span></div></div>
-      <button class="btn small" data-scan="quick" title="ARP/ping ile cihazları bul">Hızlı keşif</button>
-      <button class="btn small primary" data-scan="deep" title="Port, servis, OS ve güvenlik taraması">Derin tara</button>
+      <button class="btn small" data-scan="quick" title="{{ t('nav.quick_scan_tip') }}">{{ t('nav.quick_scan') }}</button>
+      <button class="btn small primary" data-scan="deep" title="{{ t('nav.deep_scan_tip') }}">{{ t('nav.deep_scan') }}</button>
+      <span class="lang-switch" aria-label="{{ t('common.language') }}">
+        <a href="/lang/tr?next={{ request.url.path }}" class="{{ 'active' if get_lang() == 'tr' }}" hreflang="tr">TR</a><a href="/lang/en?next={{ request.url.path }}" class="{{ 'active' if get_lang() == 'en' }}" hreflang="en">EN</a>
+      </span>
     </div>
   </header>
   <main>

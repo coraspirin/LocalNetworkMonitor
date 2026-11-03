@@ -2,13 +2,33 @@ from app.scanner.analysis import Identity, diff_snapshots, find_identity_match, 
 from app.scanner.watchdog import ArpDetector, evaluate_dhcp_offers
 
 
-# ------------------------------------------------------------ MAC birleştirme
+# ------------------------------------------------------------ gizli MAC eşleştirme
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+from app.scanner.analysis import decide, normalize_name, score_identity_candidates  # noqa: E402
+
+NOW = datetime(2026, 11, 3, 12, 0, tzinfo=timezone.utc)
+APPLE_FP = "1,121,3,6,15,108,114,119,252,95,44,46|"
+
+
+def test_name_normalization():
+    assert normalize_name("Aylin’s iPhone") == normalize_name("Aylins-iPhone.local") == "aylinsiphone"
+    assert normalize_name("A1B2C3D4E5F6@Aylin's iPhone") == "aylinsiphone"
+    assert normalize_name("iPhone") is None and normalize_name("android") is None
+
+
 def test_random_mac_matches_by_mdns_name():
     existing = [
         Identity(1, hostname="laptop.lan"),
         Identity(2, mdns_name="Aylins-iPhone", is_random_mac=True),
     ]
     cand = Identity(10, mdns_name="aylins-iphone.local", is_random_mac=True)
+    assert find_identity_match(cand, existing) == 2
+
+
+def test_random_mac_matches_by_service_instance_name():
+    existing = [Identity(2, service_names=("Aylin’s iPhone",), is_random_mac=True)]
+    cand = Identity(10, dhcp_hostname="Aylins-iPhone", is_random_mac=True)
     assert find_identity_match(cand, existing) == 2
 
 
@@ -23,16 +43,54 @@ def test_no_match_for_hardware_mac_or_generic_names():
     assert find_identity_match(Identity(9, hostname="android", is_random_mac=True), existing) is None
 
 
-def test_ambiguous_match_is_skipped():
-    existing = [Identity(1, hostname="phone"), Identity(2, mdns_name="phone")]
-    assert find_identity_match(Identity(9, hostname="phone", is_random_mac=True), existing) is None
+def test_ambiguous_name_match_becomes_suggestion():
+    existing = [Identity(1, hostname="aylinphone"), Identity(2, mdns_name="aylinphone")]
+    cand = Identity(9, hostname="aylinphone", is_random_mac=True)
+    action, matches = decide(score_identity_candidates(cand, existing))
+    assert action == "suggest" and {m.device_id for m in matches} == {1, 2}
+    assert find_identity_match(cand, existing) is None
 
 
-def test_port_signature_match_only_between_random_macs():
+def test_nameless_iphone_rotation_creates_suggestion():
+    """İsmini gizleyen iPhone: aynı DHCP parmak izi + aynı OS + eski MAC az önce kayboldu -> öneri (otomatik değil)."""
+    old = Identity(1, is_random_mac=True, dhcp_fp=APPLE_FP, os_family="apple", port_signature=frozenset({62078}),
+                   last_seen=NOW - timedelta(minutes=4))
+    other_phone = Identity(2, is_random_mac=True, dhcp_fp="1,3,6,15,26,28,51,58,59,43|android-dhcp-14", os_family="android",
+                           last_seen=NOW - timedelta(minutes=10))
+    cand = Identity(9, is_random_mac=True, dhcp_fp=APPLE_FP, os_family="apple", first_seen=NOW, present=True)
+    matches = score_identity_candidates(cand, [old, other_phone])
+    action, chosen = decide(matches)
+    assert action == "suggest"
+    assert chosen[0].device_id == 1 and chosen[0].score == 40
+    assert set(chosen[0].reasons) == {"dhcp_fp", "os_family", "timing"}
+    assert all(m.device_id != 2 for m in matches)  # farklı OS -> elendi
+
+
+def test_port_signature_alone_is_not_enough():
     sig = frozenset({62078, 49152})
     existing = [Identity(1, port_signature=sig), Identity(2, port_signature=sig, is_random_mac=True)]
-    assert find_identity_match(Identity(9, port_signature=sig, is_random_mac=True), existing) == 2
-    assert find_identity_match(Identity(9, port_signature=frozenset({62078}), is_random_mac=True), existing) is None
+    assert score_identity_candidates(Identity(9, port_signature=sig, is_random_mac=True), existing) == []
+
+
+def test_device_present_at_same_time_never_matches():
+    old = Identity(1, mdns_name="aylins-iphone", is_random_mac=True, present=True)
+    cand = Identity(9, mdns_name="aylins-iphone", is_random_mac=True)
+    assert score_identity_candidates(cand, [old]) == []
+
+
+def test_conflicting_names_block_fingerprint_match():
+    old = Identity(1, dhcp_hostname="Emre-iPhone", is_random_mac=True, dhcp_fp=APPLE_FP, os_family="apple",
+                   last_seen=NOW - timedelta(minutes=2))
+    cand = Identity(9, dhcp_hostname="Aylin-iPhone", is_random_mac=True, dhcp_fp=APPLE_FP, os_family="apple", first_seen=NOW)
+    assert score_identity_candidates(cand, [old]) == []  # 20+5+15-40 = 0
+
+
+def test_name_plus_fingerprint_auto_merges_even_with_two_candidates():
+    a = Identity(1, mdns_name="aylins-iphone", is_random_mac=True, dhcp_fp=APPLE_FP, os_family="apple")
+    b = Identity(2, is_random_mac=True, dhcp_fp=APPLE_FP, os_family="apple", last_seen=NOW - timedelta(minutes=1))
+    cand = Identity(9, mdns_name="Aylin’s iPhone", is_random_mac=True, dhcp_fp=APPLE_FP, os_family="apple", first_seen=NOW)
+    action, chosen = decide(score_identity_candidates(cand, [a, b]))
+    assert action == "merge" and chosen[0].device_id == 1
 
 
 # ------------------------------------------------------------ diff

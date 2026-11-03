@@ -1,16 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Rapor{% endblock %}
+{% block title %}{{ t('rep.title') }}{% endblock %}
 {% block content %}
 <div class="page-head">
-  <div><h1>Haftalık rapor</h1><div class="muted">Ayarlarda seçilen gün ve saatte bildirim adreslerine otomatik gönderilir.</div></div>
+  <div><h1>{{ t('rep.title') }}</h1><div class="muted">{{ t('rep.subtitle', lang=default_lang_name) }}</div></div>
   <div class="toolbar">
-    <a class="btn small" href="/api/report/preview" target="_blank" rel="noopener">Yeni sekmede aç</a>
-    <button class="btn primary small" id="send-report" {{ 'disabled' if not has_targets }} title="{{ '' if has_targets else 'Önce Ayarlar > Bildirimler kısmından bir adres ekleyin' }}">Şimdi gönder</button>
+    <a class="btn small" href="/api/report/preview" target="_blank" rel="noopener">{{ t('common.open_new_tab') }}</a>
+    <button class="btn primary small" id="send-report" {{ 'disabled' if not has_targets }} title="{{ '' if has_targets else t('err.report_no_target') }}">{{ t('rep.send') }}</button>
   </div>
 </div>
-{% if not has_targets %}<p class="notice">Rapor göndermek için <a href="/settings">Ayarlar</a> sayfasından bir bildirim adresi (ör. e-posta) ekleyin.</p>{% endif %}
+{% if not has_targets %}<p class="notice"><a href="/settings">{{ t('rep.need_target') }}</a></p>{% endif %}
 <div class="card" style="padding:0;overflow:hidden">
-  <iframe src="/api/report/preview" title="Rapor önizlemesi" style="width:100%;height:75vh;border:0;background:#fff"></iframe>
+  <iframe src="/api/report/preview" title="{{ t('rep.preview') }}" style="width:100%;height:75vh;border:0;background:#fff"></iframe>
 </div>
 {% endblock %}
 {% block scripts %}
@@ -18,7 +18,7 @@
 const btn = document.getElementById("send-report");
 btn && btn.addEventListener("click", async () => {
   btn.disabled = true;
-  try { await NS.api("POST", "/api/report/send"); NS.toast("Rapor gönderildi"); } catch (e) { NS.toast(e.message); }
+  try { await NS.api("POST", "/api/report/send"); NS.toast(NS.t("report_sent")); } catch (e) { NS.toast(e.message); }
   btn.disabled = false;
 });
 </script>

@@ -1,46 +1,45 @@
 {% extends "base.html" %}
-{% block title %}Tarama karşılaştırma{% endblock %}
+{% block title %}{{ t('diff.title') }}{% endblock %}
 {% block content %}
-{% set KIND = {'device_added': ('➕', 'Yeni cihaz'), 'device_missing': ('➖', 'Bulunamadı'), 'port_opened': ('🔓', 'Port açıldı'), 'port_closed': ('🔒', 'Port kapandı'), 'service_changed': ('🔁', 'Servis değişti'), 'os_changed': ('💿', 'OS değişti'), 'ip_changed': ('🔀', 'IP değişti'), 'finding_new': ('⚠️', 'Yeni bulgu'), 'finding_resolved': ('✅', 'Bulgu çözüldü')} %}
+{% set ICON = {'device_added': '➕', 'device_missing': '➖', 'port_opened': '🔓', 'port_closed': '🔒', 'service_changed': '🔁', 'os_changed': '💿', 'ip_changed': '🔀', 'finding_new': '⚠️', 'finding_resolved': '✅'} %}
 <div class="page-head">
-  <div><div class="muted small"><a href="/history">Geçmiş</a> /</div><h1>Tarama karşılaştırma</h1>
-    <div class="muted">İki derin tarama arasındaki port, servis, işletim sistemi ve bulgu farkları</div></div>
+  <div><div class="muted small"><a href="/history">{{ t('nav.history') }}</a> /</div><h1>{{ t('diff.title') }}</h1>
+    <div class="muted">{{ t('diff.subtitle') }}</div></div>
 </div>
 
 <div class="card">
   {% if scans | length < 2 %}
-    <div class="empty">Karşılaştırma için en az iki tamamlanmış derin tarama gerekiyor ({{ scans | length }} mevcut).</div>
+    <div class="empty">{{ t('diff.need_two', n=scans | length) }}</div>
   {% else %}
   <form method="get" class="toolbar" style="margin-bottom:16px">
-    <label for="a" style="margin:0">Eski</label>
+    <label for="a" style="margin:0">{{ t('diff.older') }}</label>
     <select name="a" id="a">
       {% for sc in scans %}<option value="{{ sc.id }}" {{ 'selected' if sc.id == result.a }}>#{{ sc.id }} — {{ sc.started_at | localtime }}</option>{% endfor %}
     </select>
-    <label for="b" style="margin:0">Yeni</label>
+    <label for="b" style="margin:0">{{ t('diff.newer') }}</label>
     <select name="b" id="b">
       {% for sc in scans %}<option value="{{ sc.id }}" {{ 'selected' if sc.id == result.b }}>#{{ sc.id }} — {{ sc.started_at | localtime }}</option>{% endfor %}
     </select>
-    <button class="btn primary small" type="submit">Karşılaştır</button>
+    <button class="btn primary small" type="submit">{{ t('diff.compare') }}</button>
   </form>
 
   {% if result.changes %}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Cihaz</th><th>Değişiklik</th><th>Ayrıntı</th></tr></thead>
+      <thead><tr><th>{{ t('diff.col_device') }}</th><th>{{ t('diff.col_change') }}</th><th>{{ t('diff.col_detail') }}</th></tr></thead>
       <tbody>
       {% for c in result.changes %}
-        {% set k = KIND.get(c.kind, ('•', c.kind)) %}
         <tr>
-          <td>{% if c.device != 'net' %}<a href="/devices/{{ c.device }}">{{ c.name }}</a>{% else %}{{ c.name }}{% endif %}</td>
-          <td class="nowrap">{{ k[0] }} {{ k[1] }}</td>
-          <td>{% if c.severity in ('medium', 'high', 'critical') and c.kind == 'finding_new' %}<span class="badge sev-{{ c.severity }}">{{ c.severity | sev }}</span> {% endif %}{{ c.detail }}</td>
+          <td>{% if c.device != 'net' %}<a href="/devices/{{ c.device }}">{{ change_name(c) }}</a>{% else %}{{ change_name(c) }}{% endif %}</td>
+          <td class="nowrap">{{ ICON.get(c.kind, '•') }} {{ t('diffk.' ~ c.kind) }}</td>
+          <td>{% if c.severity in ('medium', 'high', 'critical') and c.kind == 'finding_new' %}<span class="badge sev-{{ c.severity }}">{{ c.severity | sev }}</span> {% endif %}{{ diff_text(c) }}</td>
         </tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-    <div class="empty">Bu iki tarama arasında fark yok.</div>
+    <div class="empty">{{ t('diff.none') }}</div>
   {% endif %}
   {% endif %}
 </div>

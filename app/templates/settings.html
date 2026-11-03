@@ -1,107 +1,126 @@
 {% extends "base.html" %}
-{% block title %}Ayarlar{% endblock %}
+{% block title %}{{ t('set.title') }}{% endblock %}
 {% block content %}
-{% set JOB_LABELS = {'quick': 'Hızlı keşif', 'deep': 'Derin tarama', 'dhcp': 'DHCP yoklaması', 'weekly_report': 'Haftalık rapor', 'cleanup': 'Temizlik', 'initial': 'İlk tarama'} %}
-<div class="page-head"><div><h1>Ayarlar</h1><div class="muted">Değişiklikler hemen uygulanır; zamanlayıcı yeniden yapılandırılır.</div></div></div>
+<div class="page-head"><div><h1>{{ t('set.title') }}</h1><div class="muted">{{ t('set.subtitle') }}</div></div></div>
 
 <div class="grid cols-2">
   <div class="card">
-    <h2>Taranan ağlar</h2>
-    <p class="muted small">Doğrudan bağlı ağlarda ARP kullanılır (MAC ve üretici bilgisi alınır). Router arkasındaki VLAN'larda ping taraması yapılır; bu ağlarda MAC/üretici görünmez.</p>
+    <h2>{{ t('set.subnets') }}</h2>
+    <p class="muted small">{{ t('set.subnets_help') }}</p>
     <div class="table-wrap">
       <table id="subnets">
-        <thead><tr><th>Etiket</th><th>CIDR</th><th>Yöntem</th><th>Aktif</th><th></th></tr></thead>
+        <thead><tr><th>{{ t('set.col_label') }}</th><th>{{ t('set.col_cidr') }}</th><th>{{ t('set.col_mode') }}</th><th>{{ t('set.col_enabled') }}</th><th></th></tr></thead>
         <tbody>
           {% for sn in subnets %}
           <tr data-id="{{ sn.id }}">
-            <td><input type="text" name="label" value="{{ sn.label }}" style="width:100%"></td>
-            <td><input type="text" name="cidr" value="{{ sn.cidr }}" class="mono" style="width:100%"></td>
-            <td><select name="mode">
-              {% for m, l in [('auto', 'Otomatik'), ('arp', 'ARP'), ('ping', 'Ping')] %}<option value="{{ m }}" {{ 'selected' if sn.mode == m }}>{{ l }}</option>{% endfor %}
+            <td><input type="text" name="label" value="{{ sn.label }}" style="width:100%" aria-label="{{ t('set.col_label') }}"></td>
+            <td><input type="text" name="cidr" value="{{ sn.cidr }}" class="mono" style="width:100%" aria-label="{{ t('set.col_cidr') }}"></td>
+            <td><select name="mode" aria-label="{{ t('set.col_mode') }}">
+              {% for m in ['auto', 'arp', 'ping'] %}<option value="{{ m }}" {{ 'selected' if sn.mode == m }}>{{ t('set.mode_' ~ m) }}</option>{% endfor %}
             </select></td>
-            <td><input type="checkbox" name="enabled" {{ 'checked' if sn.enabled }} aria-label="Aktif"></td>
-            <td class="nowrap"><button class="btn small" data-save>Kaydet</button> <button class="btn small danger" data-del>Sil</button></td>
+            <td><input type="checkbox" name="enabled" {{ 'checked' if sn.enabled }} aria-label="{{ t('set.col_enabled') }}"></td>
+            <td class="nowrap"><button class="btn small" data-save>{{ t('common.save') }}</button> <button class="btn small danger" data-del>{{ t('common.delete') }}</button></td>
           </tr>
           {% else %}
-          <tr><td colspan="5" class="muted">Ağ tanımlı değil. Otomatik tespit başarısız olduysa aşağıdan ekleyin.</td></tr>
+          <tr><td colspan="5" class="muted">{{ t('set.no_subnets') }}</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-    <h3>Ağ ekle</h3>
+    <h3>{{ t('set.add_subnet') }}</h3>
     <form id="add-subnet" class="toolbar">
-      <input type="text" name="label" placeholder="Etiket (ör. IoT)" required style="flex:1;min-width:100px">
+      <input type="text" name="label" placeholder="{{ t('set.label_ph') }}" required style="flex:1;min-width:100px">
       <input type="text" name="cidr" placeholder="192.168.20.0/24" class="mono" required style="flex:1;min-width:140px">
-      <select name="mode"><option value="auto">Otomatik</option><option value="arp">ARP</option><option value="ping">Ping</option></select>
-      <button class="btn primary small" type="submit">Ekle</button>
+      <select name="mode" aria-label="{{ t('set.col_mode') }}">{% for m in ['auto', 'arp', 'ping'] %}<option value="{{ m }}">{{ t('set.mode_' ~ m) }}</option>{% endfor %}</select>
+      <button class="btn primary small" type="submit">{{ t('common.add') }}</button>
     </form>
   </div>
 
   <div class="card">
-    <h2>Zamanlama</h2>
-    <form id="settings-form" data-group="schedule">
+    <h2>{{ t('set.schedule') }}</h2>
+    <form id="settings-form">
       <div class="grid cols-2" style="gap:0 12px">
-        <div class="field"><label>Hızlı keşif aralığı (dakika)</label><input type="number" min="1" name="quick_interval_min" value="{{ cfg.quick_interval_min }}"></div>
-        <div class="field"><label>Derin tarama aralığı (saat, 0 = kapalı)</label><input type="number" min="0" name="deep_interval_hours" value="{{ cfg.deep_interval_hours }}"></div>
-        <div class="field"><label>Taranacak port sayısı (en yaygın N)</label><input type="number" min="10" max="65535" name="top_ports" value="{{ cfg.top_ports }}"></div>
-        <div class="field"><label>Aynı anda taranan cihaz</label><input type="number" min="1" max="16" name="scan_concurrency" value="{{ cfg.scan_concurrency }}"></div>
-        <div class="field"><label>Cihaz başına zaman aşımı (dakika)</label><input type="number" min="1" name="host_timeout_min" value="{{ cfg.host_timeout_min }}"></div>
-        <div class="field"><label>Varlık geçmişi saklama (gün)</label><input type="number" min="1" name="presence_retention_days" value="{{ cfg.presence_retention_days }}"></div>
+        <div class="field"><label>{{ t('set.quick_interval') }}</label><input type="number" min="1" name="quick_interval_min" value="{{ cfg.quick_interval_min }}"></div>
+        <div class="field"><label>{{ t('set.deep_interval') }}</label><input type="number" min="0" name="deep_interval_hours" value="{{ cfg.deep_interval_hours }}"></div>
+        <div class="field"><label>{{ t('set.top_ports') }}</label><input type="number" min="10" max="65535" name="top_ports" value="{{ cfg.top_ports }}"></div>
+        <div class="field"><label>{{ t('set.concurrency') }}</label><input type="number" min="1" max="16" name="scan_concurrency" value="{{ cfg.scan_concurrency }}"></div>
+        <div class="field"><label>{{ t('set.host_timeout') }}</label><input type="number" min="1" name="host_timeout_min" value="{{ cfg.host_timeout_min }}"></div>
+        <div class="field"><label>{{ t('set.retention') }}</label><input type="number" min="1" name="presence_retention_days" value="{{ cfg.presence_retention_days }}"></div>
       </div>
-      <label class="check"><input type="checkbox" name="enable_vulners" {{ 'checked' if cfg.enable_vulners }}> CVE zafiyet kontrolü (vulners — internet bağlantısı gerekir)</label>
-      <p style="margin-top:12px"><button class="btn primary" type="submit">Kaydet</button></p>
+      <label class="check"><input type="checkbox" name="enable_vulners" {{ 'checked' if cfg.enable_vulners }}> {{ t('set.vulners') }}</label>
+      <p style="margin-top:12px"><button class="btn primary" type="submit">{{ t('common.save') }}</button></p>
     </form>
-    <h3>Sonraki çalışmalar</h3>
+    <h3>{{ t('set.next_runs') }}</h3>
     <dl class="kv small">
-      {% for job, ts in next_runs.items() %}<dt>{{ JOB_LABELS.get(job, job) }}</dt><dd>{{ ts | localtime }}</dd>{% else %}<dt>—</dt><dd>Zamanlayıcı çalışmıyor</dd>{% endfor %}
+      {% for job, ts in next_runs.items() %}<dt>{{ t('set.job.' ~ job) }}</dt><dd>{{ ts | localtime }}</dd>{% else %}<dt>—</dt><dd>{{ t('set.no_scheduler') }}</dd>{% endfor %}
     </dl>
   </div>
 </div>
 
 <div class="grid cols-2" style="margin-top:16px">
   <div class="card">
-    <h2>Bildirimler</h2>
+    <h2>{{ t('set.notifications') }}</h2>
     <form id="notify-form">
       <div class="field">
-        <label for="apprise">Bildirim adresleri (her satıra bir tane, <a href="https://github.com/caronc/apprise/wiki" target="_blank" rel="noopener">Apprise formatı</a>)</label>
-        <textarea id="apprise" name="apprise_urls" class="mono" placeholder="tgram://BOT_TOKEN/CHAT_ID&#10;mailtos://kullanici:uygulama-sifresi@gmail.com?to=ben@ornek.com&#10;ntfy://ntfy.sh/benim-konum">{{ cfg.apprise_urls }}</textarea>
+        <label for="apprise">{{ t('set.apprise') }} <a href="https://github.com/caronc/apprise/wiki" target="_blank" rel="noopener">{{ t('set.apprise_link') }}</a>)</label>
+        <textarea id="apprise" name="apprise_urls" class="mono" placeholder="tgram://BOT_TOKEN/CHAT_ID&#10;mailtos://user:app-password@gmail.com?to=me@example.com&#10;ntfy://ntfy.sh/my-topic">{{ cfg.apprise_urls }}</textarea>
       </div>
-      <label class="check"><input type="checkbox" name="notify_on_leave" {{ 'checked' if cfg.notify_on_leave }}> Cihaz ağdan ayrıldığında da bildir</label>
-      <div class="grid cols-2" style="gap:0 12px;margin-top:12px">
-        <div class="field"><label>Haftalık rapor günü</label>
+      <label class="check"><input type="checkbox" name="notify_on_leave" {{ 'checked' if cfg.notify_on_leave }}> {{ t('set.notify_leave') }}</label>
+      <div class="field" style="margin-top:12px"><label for="random-notify">{{ t('set.random_notify') }}</label>
+        <select id="random-notify" name="random_mac_notify">
+          {% for m in ['smart', 'always', 'never'] %}<option value="{{ m }}" {{ 'selected' if cfg.random_mac_notify == m }}>{{ t('set.random_' ~ m) }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="grid cols-2" style="gap:0 12px">
+        <div class="field"><label>{{ t('set.report_day') }}</label>
           <select name="report_weekday">
-            {% for v, l in [('mon','Pazartesi'),('tue','Salı'),('wed','Çarşamba'),('thu','Perşembe'),('fri','Cuma'),('sat','Cumartesi'),('sun','Pazar')] %}<option value="{{ v }}" {{ 'selected' if cfg.report_weekday == v }}>{{ l }}</option>{% endfor %}
+            {% for v in ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] %}<option value="{{ v }}" {{ 'selected' if cfg.report_weekday == v }}>{{ t('day.' ~ v) }}</option>{% endfor %}
           </select>
         </div>
-        <div class="field"><label>Rapor saati</label><input type="number" min="0" max="23" name="report_hour" value="{{ cfg.report_hour }}"></div>
+        <div class="field"><label>{{ t('set.report_hour') }}</label><input type="number" min="0" max="23" name="report_hour" value="{{ cfg.report_hour }}"></div>
       </div>
       <div class="toolbar">
-        <button class="btn primary" type="submit">Kaydet</button>
-        <button class="btn" type="button" id="test-notify">Test bildirimi gönder</button>
+        <button class="btn primary" type="submit">{{ t('common.save') }}</button>
+        <button class="btn" type="button" id="test-notify">{{ t('set.test_notify') }}</button>
       </div>
     </form>
-    <p class="muted small">Bildirim gönderilen olaylar: yeni (güvenilmeyen) cihaz, yeni açılan port, yüksek/kritik güvenlik bulgusu, ARP spoofing, sahte DHCP sunucusu.</p>
+    <p class="muted small">{{ t('set.notify_help') }}</p>
   </div>
 
-  <div class="card">
-    <h2>Sürekli izleme</h2>
-    <form id="watch-form">
-      <label class="check"><input type="checkbox" name="enable_watchdog" {{ 'checked' if cfg.enable_watchdog }}> ARP spoofing izleyicisini çalıştır</label>
-      <div class="field" style="margin-top:12px"><label>DHCP yoklama aralığı (dakika, 0 = kapalı)</label><input type="number" min="0" name="dhcp_probe_interval_min" value="{{ cfg.dhcp_probe_interval_min }}"></div>
-      <button class="btn primary" type="submit">Kaydet</button>
-    </form>
-    <h3>Bilinen değerler</h3>
-    <p class="muted small">Router'ı değiştirdiyseniz yeni değerleri onaylayın; aksi halde sahte uyarı alırsınız.</p>
-    <form id="gw-form" class="toolbar" style="margin-bottom:8px">
-      <label for="gw-mac" style="margin:0;min-width:130px">Ağ geçidi MAC</label>
-      <input type="text" id="gw-mac" name="mac" value="{{ gateway_mac }}" class="mono" placeholder="aa:bb:cc:dd:ee:ff" style="flex:1">
-      <button class="btn small" type="submit">Onayla</button>
-    </form>
-    <form id="dhcp-form" class="toolbar">
-      <label for="dhcp-ip" style="margin:0;min-width:130px">DHCP sunucusu</label>
-      <input type="text" id="dhcp-ip" name="server" value="{{ dhcp_server_known }}" class="mono" placeholder="192.168.1.1" style="flex:1">
-      <button class="btn small" type="submit">Onayla</button>
-    </form>
+  <div>
+    <div class="card">
+      <h2>{{ t('set.general') }}</h2>
+      <form id="general-form">
+        <div class="field"><label for="default-lang">{{ t('set.default_lang') }}</label>
+          <select id="default-lang" name="default_language">
+            <option value="tr" {{ 'selected' if cfg.default_language == 'tr' }}>Türkçe</option>
+            <option value="en" {{ 'selected' if cfg.default_language == 'en' }}>English</option>
+          </select>
+        </div>
+        <button class="btn primary" type="submit">{{ t('common.save') }}</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>{{ t('set.watch') }}</h2>
+      <form id="watch-form">
+        <label class="check"><input type="checkbox" name="enable_watchdog" {{ 'checked' if cfg.enable_watchdog }}> {{ t('set.watch_enable') }}</label>
+        <div class="field" style="margin-top:12px"><label>{{ t('set.dhcp_interval') }}</label><input type="number" min="0" name="dhcp_probe_interval_min" value="{{ cfg.dhcp_probe_interval_min }}"></div>
+        <button class="btn primary" type="submit">{{ t('common.save') }}</button>
+      </form>
+      <h3>{{ t('set.known') }}</h3>
+      <p class="muted small">{{ t('set.known_help') }}</p>
+      <form id="gw-form" class="toolbar" style="margin-bottom:8px">
+        <label for="gw-mac" style="margin:0;min-width:130px">{{ t('set.gw_mac') }}</label>
+        <input type="text" id="gw-mac" name="mac" value="{{ gateway_mac }}" class="mono" placeholder="aa:bb:cc:dd:ee:ff" style="flex:1">
+        <button class="btn small" type="submit">{{ t('common.confirm') }}</button>
+      </form>
+      <form id="dhcp-form" class="toolbar">
+        <label for="dhcp-ip" style="margin:0;min-width:130px">{{ t('set.dhcp_server') }}</label>
+        <input type="text" id="dhcp-ip" name="server" value="{{ dhcp_server_known }}" class="mono" placeholder="192.168.1.1" style="flex:1">
+        <button class="btn small" type="submit">{{ t('common.confirm') }}</button>
+      </form>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -119,14 +138,17 @@
   }
   async function saveSettings(ev) {
     ev.preventDefault();
-    try { await NS.api("PUT", "/api/settings", formValues(ev.target)); NS.toast("Ayarlar kaydedildi"); }
-    catch (e) { NS.toast(e.message); }
+    try { await NS.api("PUT", "/api/settings", formValues(ev.target)); NS.toast(NS.t("settings_saved")); return true; }
+    catch (e) { NS.toast(e.message); return false; }
   }
   ["settings-form", "notify-form", "watch-form"].forEach((id) => document.getElementById(id).addEventListener("submit", saveSettings));
+  document.getElementById("general-form").addEventListener("submit", async (ev) => {
+    if (await saveSettings(ev)) setTimeout(() => location.reload(), 600);
+  });
 
   document.getElementById("test-notify").addEventListener("click", async () => {
     const urls = document.getElementById("apprise").value;
-    try { await NS.api("POST", "/api/settings/test-notification", { urls }); NS.toast("Test bildirimi gönderildi"); }
+    try { await NS.api("POST", "/api/settings/test-notification", { urls }); NS.toast(NS.t("test_sent")); }
     catch (e) { NS.toast(e.message); }
   });
 
@@ -137,21 +159,21 @@
   document.querySelectorAll("#subnets tr[data-id]").forEach((row) => {
     const id = row.dataset.id;
     row.querySelector("[data-save]").addEventListener("click", async () => {
-      try { await NS.api("PUT", `/api/subnets/${id}`, formValues(row)); NS.toast("Ağ kaydedildi"); } catch (e) { NS.toast(e.message); }
+      try { await NS.api("PUT", `/api/subnets/${id}`, formValues(row)); NS.toast(NS.t("subnet_saved")); } catch (e) { NS.toast(e.message); }
     });
     row.querySelector("[data-del]").addEventListener("click", async () => {
-      if (!confirm("Bu ağ listeden kaldırılsın mı? Cihaz kayıtları silinmez.")) return;
+      if (!confirm(NS.t("confirm_delete_subnet"))) return;
       try { await NS.api("DELETE", `/api/subnets/${id}`); location.reload(); } catch (e) { NS.toast(e.message); }
     });
   });
 
   document.getElementById("gw-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    try { await NS.api("POST", "/api/watchdog/accept-gateway", formValues(ev.target)); NS.toast("Ağ geçidi MAC'i onaylandı"); } catch (e) { NS.toast(e.message); }
+    try { await NS.api("POST", "/api/watchdog/accept-gateway", formValues(ev.target)); NS.toast(NS.t("gw_confirmed")); } catch (e) { NS.toast(e.message); }
   });
   document.getElementById("dhcp-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    try { await NS.api("POST", "/api/watchdog/accept-dhcp", formValues(ev.target)); NS.toast("DHCP sunucusu onaylandı"); } catch (e) { NS.toast(e.message); }
+    try { await NS.api("POST", "/api/watchdog/accept-dhcp", formValues(ev.target)); NS.toast(NS.t("dhcp_confirmed")); } catch (e) { NS.toast(e.message); }
   });
 })();
 </script>

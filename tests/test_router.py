@@ -83,7 +83,7 @@ def test_audit_against_fake_igd(igd_server):
     assert [(m.external_port, m.internal_client) for m in audit.mappings] == [(8443, "192.168.1.20"), (3389, "192.168.1.30")]
 
     findings = router.audit_findings(audit)
-    rules = {f.rule: (f.severity, ip) for f, ip in findings}
+    rules = {f.key_rule: (f.severity, ip) for f, ip in findings}
     assert rules["upnp-enabled"][0] == "medium"
     assert rules["wan-forward-tcp-3389"] == ("high", "192.168.1.30")  # riskli iç port
     assert rules["wan-forward-tcp-8443"] == ("medium", "192.168.1.20")

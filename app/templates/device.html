@@ -2,89 +2,111 @@
 {% block title %}{{ d.name }}{% endblock %}
 {% block content %}
 {% macro strip(p, left_label) -%}
-<div class="strip" role="img" aria-label="Çevrimiçi zaman çizelgesi">
+<div class="strip" role="img" aria-label="{{ t('dev.timeline') }}">
   {%- for b in p.buckets -%}<i class="{{ 'on' if b == true else ('off' if b == false else '') }}"></i>{%- endfor -%}
 </div>
-<div class="strip-axis"><span>{{ left_label }}</span><span>şimdi</span></div>
+<div class="strip-axis"><span>{{ left_label }}</span><span>{{ t('common.now') }}</span></div>
 {%- endmacro %}
 
 <div class="page-head">
   <div>
-    <div class="muted small"><a href="/">Cihazlar</a> /</div>
+    <div class="muted small"><a href="/">{{ t('nav.devices') }}</a> /</div>
     <h1><span title="{{ d.type_label }}">{{ d.icon }}</span> {{ d.name }}
-      <span class="badge"><span class="dot {{ 'on' if d.online }}"></span>{{ 'Çevrimiçi' if d.online else 'Çevrimdışı' }}</span>
-      {% if d.trusted %}<span class="badge">güvenilir</span>{% endif %}
-      {% if d.is_gateway %}<span class="badge">ağ geçidi</span>{% endif %}
+      <span class="badge"><span class="dot {{ 'on' if d.online }}"></span>{{ t('common.online') if d.online else t('common.offline') }}</span>
+      {% if d.trusted %}<span class="badge">{{ t('common.trusted') }}</span>{% endif %}
+      {% if d.is_gateway %}<span class="badge">{{ t('common.gateway') }}</span>{% endif %}
+      {% if d.archived %}<span class="badge">{{ t('dev.archived_badge') }}</span>{% endif %}
     </h1>
-    <div class="muted mono">{{ d.ip or '—' }} · {{ d.mac or 'MAC yok' }}{% if d.vendor %} · {{ d.vendor }}{% endif %}</div>
+    <div class="muted mono">{{ d.ip or '—' }} · {{ d.mac or t('ev.no_mac') }}{% if d.vendor %} · {{ d.vendor }}{% endif %}</div>
   </div>
   <div class="toolbar">
-    <button class="btn small" id="toggle-trust">{{ 'Güvenilir işaretini kaldır' if d.trusted else '✓ Güvenilir olarak işaretle' }}</button>
-    <button class="btn small danger" id="delete-device">Sil</button>
+    <button class="btn small" id="toggle-trust">{{ t('dev.untrust') if d.trusted else t('dev.trust') }}</button>
+    <button class="btn small danger" id="delete-device">{{ t('common.delete') }}</button>
   </div>
 </div>
 
-<div class="grid cols-2">
+{% for sg in d.suggestions %}
+<div class="card suggestion">
+  <h2>🔗 {{ t('dev.suggest_title') }}</h2>
+  {% if sg.device_id == d.id %}
+    <p>{{ t('dev.suggest_text', name=sg.candidate_name, score=sg.score) }} <a href="/devices/{{ sg.candidate_id }}">→</a></p>
+  {% else %}
+    <p>{{ t('dev.suggest_text_rev', name=sg.device_name, score=sg.score) }} <a href="/devices/{{ sg.device_id }}">→</a></p>
+  {% endif %}
+  {% if sg.reason_labels %}<p class="muted small">{{ t('dev.suggest_reasons', reasons=sg.reason_labels | join(', ')) }}</p>{% endif %}
+  <div class="toolbar">
+    <button class="btn primary small" data-accept="{{ sg.id }}" data-target="{{ sg.candidate_id }}">{{ t('dev.suggest_accept') }}</button>
+    <button class="btn small" data-reject="{{ sg.id }}">{{ t('dev.suggest_reject') }}</button>
+  </div>
+</div>
+{% endfor %}
+
+<div class="grid cols-2"{% if d.suggestions %} style="margin-top:16px"{% endif %}>
   <div class="card">
-    <h2>Genel bilgiler</h2>
+    <h2>{{ t('dev.general') }}</h2>
     <dl class="kv">
-      <dt>Tip</dt><dd>{{ d.type_label }}</dd>
-      <dt>İşletim sistemi</dt><dd>{{ d.os or '—' }}</dd>
-      <dt>Hostname (DNS)</dt><dd>{{ d.hostname or '—' }}</dd>
-      <dt>mDNS adı</dt><dd>{{ d.mdns_name or '—' }}</dd>
-      <dt>NetBIOS adı</dt><dd>{{ d.netbios_name or '—' }}</dd>
-      <dt>Ağ</dt><dd>{% if subnet %}{{ subnet.label }} <span class="mono muted">{{ subnet.cidr }}</span>{% else %}—{% endif %}</dd>
-      <dt>MAC türü</dt><dd>{{ 'Gizli / rastgele (locally administered)' if d.is_random_mac else 'Donanım (üretici atanmış)' }}</dd>
-      <dt>Gecikme</dt><dd>{{ ('%.1f ms' % d.rtt_ms) if d.rtt_ms is not none else '—' }}</dd>
-      <dt>İlk görülme</dt><dd>{{ d.first_seen | localtime }}</dd>
-      <dt>Son görülme</dt><dd>{{ d.last_seen | localtime }}</dd>
-      <dt>Son derin tarama</dt><dd>{{ d.last_deep_scan | localtime }}</dd>
+      <dt>{{ t('dev.type') }}</dt><dd>{{ d.type_label }}</dd>
+      <dt>{{ t('dev.os') }}</dt><dd>{{ d.os or '—' }}</dd>
+      <dt>{{ t('dev.os_family') }}</dt><dd>{{ d.os_family_label or '—' }}</dd>
+      <dt>{{ t('dev.hostname') }}</dt><dd>{{ d.hostname or '—' }}</dd>
+      <dt>{{ t('dev.dhcp_hostname') }}</dt><dd>{{ d.dhcp_hostname or '—' }}</dd>
+      <dt>{{ t('dev.mdns_name') }}</dt><dd>{{ d.mdns_name or '—' }}</dd>
+      <dt>{{ t('dev.netbios_name') }}</dt><dd>{{ d.netbios_name or '—' }}</dd>
+      <dt>{{ t('dev.subnet') }}</dt><dd>{% if subnet %}{{ subnet.label }} <span class="mono muted">{{ subnet.cidr }}</span>{% else %}—{% endif %}</dd>
+      <dt>{{ t('dev.mac_kind') }}</dt><dd>{{ t('dev.mac_random') if d.is_random_mac else t('dev.mac_hw') }}</dd>
+      <dt>{{ t('dev.latency') }}</dt><dd>{{ ('%.1f ms' % d.rtt_ms) if d.rtt_ms is not none else '—' }}</dd>
+      <dt>{{ t('dev.first_seen') }}</dt><dd>{{ d.first_seen | localtime }}</dd>
+      <dt>{{ t('dev.last_seen') }}</dt><dd>{{ d.last_seen | localtime }}</dd>
+      <dt>{{ t('dev.last_deep') }}</dt><dd>{{ d.last_deep_scan | localtime }}</dd>
     </dl>
+    {% if d.is_random_mac %}
+    <div class="notice" style="margin-top:12px">
+      <strong>🔒 {{ t('dev.ios_tip_title') }}</strong><br>{{ t('dev.ios_tip') }}
+    </div>
+    {% endif %}
   </div>
 
   <div class="card">
-    <h2>Envanter</h2>
+    <h2>{{ t('dev.inventory') }}</h2>
     <form id="edit-form">
       <div class="grid cols-2" style="gap:0 12px">
-        <div class="field"><label for="e-name">Ad</label><input type="text" id="e-name" name="name" value="{{ d.custom_name or '' }}" placeholder="{{ d.name }}"></div>
-        <div class="field"><label for="e-type">Tip</label>
+        <div class="field"><label for="e-name">{{ t('dev.name') }}</label><input type="text" id="e-name" name="name" value="{{ d.custom_name or '' }}" placeholder="{{ d.name }}"></div>
+        <div class="field"><label for="e-type">{{ t('dev.type') }}</label>
           <select id="e-type" name="device_type">
-            {% for key, val in DEVICE_TYPES.items() %}<option value="{{ key }}" {{ 'selected' if key == d.type }}>{{ val[1] }} {{ val[0] }}</option>{% endfor %}
+            {% for key, ic in DEVICE_TYPES.items() %}<option value="{{ key }}" {{ 'selected' if key == d.type }}>{{ ic }} {{ type_label(key) }}</option>{% endfor %}
           </select>
         </div>
-        <div class="field"><label for="e-loc">Konum</label><input type="text" id="e-loc" name="location" value="{{ d.location or '' }}" placeholder="ör. Salon"></div>
-        <div class="field"><label for="e-owner">Sahibi</label><input type="text" id="e-owner" name="owner" value="{{ d.owner or '' }}"></div>
+        <div class="field"><label for="e-loc">{{ t('dev.location') }}</label><input type="text" id="e-loc" name="location" value="{{ d.location or '' }}" placeholder="{{ t('dev.location_ph') }}"></div>
+        <div class="field"><label for="e-owner">{{ t('dev.owner') }}</label><input type="text" id="e-owner" name="owner" value="{{ d.owner or '' }}"></div>
       </div>
-      <div class="field"><label for="e-notes">Notlar</label><textarea id="e-notes" name="notes">{{ d.notes or '' }}</textarea></div>
-      <button class="btn primary" type="submit">Kaydet</button>
+      <div class="field"><label for="e-notes">{{ t('dev.notes') }}</label><textarea id="e-notes" name="notes">{{ d.notes or '' }}</textarea></div>
+      <button class="btn primary" type="submit">{{ t('common.save') }}</button>
     </form>
   </div>
 </div>
 
 <div class="card" style="margin-top:16px">
   <div class="page-head" style="margin-bottom:8px">
-    <h2 style="margin:0">Çevrimiçi zaman çizelgesi</h2>
+    <h2 style="margin:0">{{ t('dev.timeline') }}</h2>
     <div class="muted small">
-      Son 24 saat: <strong>{{ p24.uptime_pct if p24.uptime_pct is not none else '—' }}%</strong> çevrimiçi ·
-      Son 7 gün: <strong>{{ p7.uptime_pct if p7.uptime_pct is not none else '—' }}%</strong> ·
-      Ort. gecikme: {{ ('%.1f ms' % p24.rtt_avg) if p24.rtt_avg is not none else '—' }}
-      {% if p24.rtt_max is not none %}(en yüksek {{ '%.1f' % p24.rtt_max }} ms){% endif %}
+      {{ t('dev.uptime_summary', d1=p24.uptime_pct if p24.uptime_pct is not none else '—', d7=p7.uptime_pct if p7.uptime_pct is not none else '—', avg=('%.1f ms' % p24.rtt_avg) if p24.rtt_avg is not none else '—') }}
+      {% if p24.rtt_max is not none %}{{ t('dev.rtt_max', v='%.1f' % p24.rtt_max) }}{% endif %}
     </div>
   </div>
-  <h3>Son 24 saat</h3>
-  {{ strip(p24, '24 saat önce') }}
-  <h3>Son 7 gün</h3>
-  {{ strip(p7, '7 gün önce') }}
-  <p class="muted small" style="margin-bottom:0">Yeşil: görüldü · Gri: görülmedi · Boş: tarama yapılmadı. Telefonlar uyku modunda ARP'ye yanıt vermeyebilir.</p>
+  <h3>{{ t('dev.last_24h') }}</h3>
+  {{ strip(p24, t('dev.ago_24h')) }}
+  <h3>{{ t('dev.last_7d') }}</h3>
+  {{ strip(p7, t('dev.ago_7d')) }}
+  <p class="muted small" style="margin-bottom:0">{{ t('dev.timeline_help') }}</p>
 </div>
 
 <div class="grid cols-2" style="margin-top:16px">
   <div class="card">
-    <h2>Açık portlar ve servisler</h2>
+    <h2>{{ t('dev.ports') }}</h2>
     {% if d.ports %}
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Port</th><th>Servis</th><th>Ürün / sürüm</th></tr></thead>
+        <thead><tr><th>{{ t('dev.col_port') }}</th><th>{{ t('dev.col_service') }}</th><th>{{ t('dev.col_product') }}</th></tr></thead>
         <tbody>
           {% for p in d.ports %}
           <tr>
@@ -97,24 +119,24 @@
       </table>
     </div>
     {% elif d.last_deep_scan %}
-    <div class="empty">Açık port bulunamadı.</div>
+    <div class="empty">{{ t('dev.no_ports') }}</div>
     {% else %}
-    <div class="empty">Bu cihaz henüz derin taramadan geçmedi.</div>
+    <div class="empty">{{ t('dev.not_deep') }}</div>
     {% endif %}
   </div>
 
   <div class="card">
-    <h2>Güvenlik bulguları</h2>
+    <h2>{{ t('dev.findings') }}</h2>
     {% set active = d.findings | rejectattr('resolved') | list %}
     {% if active %}
       {% for f in active %}{% include "partials/finding.html" %}{% endfor %}
     {% else %}
-      <div class="empty">Aktif bulgu yok{% if not d.last_deep_scan %} (cihaz henüz derin taranmadı){% endif %}.</div>
+      <div class="empty">{{ t('dev.no_findings') if d.last_deep_scan else t('dev.no_findings_not_deep') }}</div>
     {% endif %}
     {% set resolved = d.findings | selectattr('resolved') | list %}
     {% if resolved %}
-    <details><summary class="muted">Çözülmüş bulgular ({{ resolved | length }})</summary>
-      {% for f in resolved %}<div class="finding dim sev-{{ f.severity }}"><div class="title">{{ f.title }}</div><div class="muted small">Son görülme {{ f.last_seen | localtime }}</div></div>{% endfor %}
+    <details><summary class="muted">{{ t('dev.resolved', n=resolved | length) }}</summary>
+      {% for f in resolved %}<div class="finding dim sev-{{ f.severity }}"><div class="title">{{ f.title }}</div><div class="muted small">{{ t('common.last_seen_at', ts=f.last_seen | localtime) }}</div></div>{% endfor %}
     </details>
     {% endif %}
   </div>
@@ -122,62 +144,62 @@
 
 <div class="grid cols-2" style="margin-top:16px">
   <div class="card">
-    <h2>Kendini tanıtma bilgileri</h2>
-    <h3>mDNS / Bonjour servisleri</h3>
+    <h2>{{ t('dev.announce') }}</h2>
+    <h3>{{ t('dev.mdns') }}</h3>
     {% if d.mdns_services %}
     <ul>
       {% for s in d.mdns_services %}
-      <li><code>{{ s.type }}</code> — {{ s.name }}{% if s.port %} <span class="muted">(port {{ s.port }})</span>{% endif %}
+      <li><code>{{ s.type }}</code> — {{ s.name }}{% if s.port %} <span class="muted">({{ t('common.port', port=s.port) }})</span>{% endif %}
         {% if s.txt %}<div class="muted small">{% for k, v in s.txt.items() %}{{ k }}={{ v }} {% endfor %}</div>{% endif %}</li>
       {% endfor %}
     </ul>
-    {% else %}<p class="muted">Yayın yok.</p>{% endif %}
-    <h3>SSDP / UPnP</h3>
+    {% else %}<p class="muted">{{ t('dev.no_mdns') }}</p>{% endif %}
+    <h3>{{ t('dev.ssdp') }}</h3>
     {% if d.ssdp %}
     <dl class="kv">
       {% for k, v in d.ssdp.items() %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}
     </dl>
-    {% else %}<p class="muted">Yanıt yok.</p>{% endif %}
+    {% else %}<p class="muted">{{ t('dev.no_ssdp') }}</p>{% endif %}
   </div>
 
   <div class="card">
-    <h2>MAC adresleri</h2>
-    <p class="muted small">Gizli MAC kullanan telefonlar zamanla farklı adresler alır; aynı cihaza ait adresler burada toplanır.</p>
+    <h2>{{ t('dev.macs') }}</h2>
+    <p class="muted small">{{ t('dev.macs_help') }}</p>
     <table>
-      <thead><tr><th>MAC</th><th>İlk</th><th>Son</th><th></th></tr></thead>
+      <thead><tr><th>MAC</th><th>{{ t('dev.col_first') }}</th><th>{{ t('dev.col_last') }}</th><th></th></tr></thead>
       <tbody>
       {% for a in d.aliases %}
         <tr>
           <td class="mono">{{ a.mac }}</td>
           <td class="muted small nowrap">{{ a.first_seen | localtime }}</td>
           <td class="muted small nowrap">{{ a.last_seen | localtime }}</td>
-          <td>{% if d.aliases | length > 1 %}<button class="btn small" data-split="{{ a.id }}">Ayır</button>{% endif %}</td>
+          <td>{% if d.aliases | length > 1 %}<button class="btn small" data-split="{{ a.id }}">{{ t('dev.split') }}</button>{% endif %}</td>
         </tr>
       {% else %}
-        <tr><td colspan="4" class="muted">Kayıtlı MAC yok (yönlendirilmiş ağ).</td></tr>
+        <tr><td colspan="4" class="muted">{{ t('dev.no_macs') }}</td></tr>
       {% endfor %}
       </tbody>
     </table>
-    <h3>Başka bir kayıtla birleştir</h3>
+    <h3>{{ t('dev.merge_title') }}</h3>
     <div class="toolbar">
-      <select id="merge-target" aria-label="Birleştirilecek cihaz" style="flex:1;min-width:0">
-        <option value="">Bu kaydı şu cihaza taşı…</option>
-        {% for o in others %}<option value="{{ o.id }}">{{ o.name }} ({{ o.ip or o.mac }}){{ '' if o.online else ' — çevrimdışı' }}</option>{% endfor %}
+      <select id="merge-target" aria-label="{{ t('dev.merge_title') }}" style="flex:1;min-width:0">
+        <option value="">{{ t('dev.merge_pick') }}</option>
+        {% for o in others %}<option value="{{ o.id }}">{{ o.name }} ({{ o.ip or o.mac }}){{ '' if o.online else t('dev.offline_suffix') }}</option>{% endfor %}
       </select>
-      <button class="btn small" id="merge-btn">Birleştir</button>
+      <button class="btn small" id="merge-btn">{{ t('dev.merge_btn') }}</button>
     </div>
   </div>
 </div>
 
 <div class="card" style="margin-top:16px">
-  <h2>Olay geçmişi</h2>
+  <h2>{{ t('dev.events') }}</h2>
   {% if d.events %}
   <ul class="events">
     {% for e in d.events %}
     <li><time>{{ e.ts | localtime }}</time><div>{% if e.severity != 'info' %}<span class="badge sev-{{ e.severity }}">{{ e.severity | sev }}</span> {% endif %}{{ e.message }}</div></li>
     {% endfor %}
   </ul>
-  {% else %}<div class="empty">Olay yok.</div>{% endif %}
+  {% else %}<div class="empty">{{ t('dev.no_events') }}</div>{% endif %}
 </div>
 {% endblock %}
 
@@ -189,25 +211,33 @@
   document.getElementById("edit-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const body = Object.fromEntries(new FormData(ev.target).entries());
-    try { await NS.api("PATCH", `/api/devices/${id}`, body); NS.toast("Kaydedildi"); setTimeout(() => location.reload(), 500); }
+    try { await NS.api("PATCH", `/api/devices/${id}`, body); NS.toast(NS.t("saved")); setTimeout(() => location.reload(), 500); }
     catch (e) { NS.toast(e.message); }
   });
   document.getElementById("toggle-trust").addEventListener("click", async () => {
     try { await NS.api("PATCH", `/api/devices/${id}`, { trusted: !trusted }); location.reload(); } catch (e) { NS.toast(e.message); }
   });
   document.getElementById("delete-device").addEventListener("click", async () => {
-    if (!confirm("Bu cihaz ve tüm geçmişi silinsin mi? Ağda tekrar görülürse yeni cihaz olarak eklenir.")) return;
+    if (!confirm(NS.t("confirm_delete_device"))) return;
     try { await NS.api("DELETE", `/api/devices/${id}`); location.href = "/"; } catch (e) { NS.toast(e.message); }
   });
   document.getElementById("merge-btn").addEventListener("click", async () => {
     const target = document.getElementById("merge-target").value;
-    if (!target) return NS.toast("Önce bir cihaz seçin");
-    if (!confirm("Bu kayıt seçilen cihaza taşınacak ve silinecek. Devam edilsin mi?")) return;
+    if (!target) return NS.toast(NS.t("pick_device"));
+    if (!confirm(NS.t("confirm_merge"))) return;
     try { await NS.api("POST", `/api/devices/${id}/merge`, { target_id: Number(target) }); location.href = `/devices/${target}`; }
     catch (e) { NS.toast(e.message); }
   });
   document.querySelectorAll("[data-split]").forEach((b) => b.addEventListener("click", async () => {
     try { const n = await NS.api("POST", `/api/aliases/${b.dataset.split}/split`); location.href = `/devices/${n.id}`; }
+    catch (e) { NS.toast(e.message); }
+  }));
+  document.querySelectorAll("[data-accept]").forEach((b) => b.addEventListener("click", async () => {
+    try { const r = await NS.api("POST", `/api/suggestions/${b.dataset.accept}/accept`); NS.toast(NS.t("merged")); location.href = `/devices/${r.id}`; }
+    catch (e) { NS.toast(e.message); }
+  }));
+  document.querySelectorAll("[data-reject]").forEach((b) => b.addEventListener("click", async () => {
+    try { await NS.api("POST", `/api/suggestions/${b.dataset.reject}/reject`); NS.toast(NS.t("rejected")); setTimeout(() => location.reload(), 700); }
     catch (e) { NS.toast(e.message); }
   }));
 })();
