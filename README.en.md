@@ -76,7 +76,50 @@ Update:
 git pull && docker compose up -d --build
 ```
 
+To skip the build, use the ready-made image published on GitHub:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
 Data is stored in `./data/netscanner.db` (SQLite). Databases from earlier versions are upgraded automatically on startup.
+
+## Installing on ZimaOS / CasaOS
+
+On every `main` update GitHub Actions publishes a ready-made image to `ghcr.io/coraspirin/localnetworkmonitor:latest` (amd64 + arm64). Nothing is built on ZimaOS and no terminal is needed.
+
+**From the web UI (recommended)**
+
+1. In the ZimaOS UI open the **App Store**, click **+** in the top right and choose **Install a customized app**.
+2. Click **Import** in the top right and paste the contents of [`zimaos/docker-compose.yml`](zimaos/docker-compose.yml).
+3. Fill in `ADMIN_PASSWORD` and `SECRET_KEY` in the environment variables. If port 8080 is used by another app, change `PORT` (and the web UI port).
+4. Click **Install**. The app icon appears on the dashboard; data is stored in `/DATA/AppData/localnetworkmonitor`.
+
+To update, use the app's update/reinstall option; the newest `latest` image is pulled.
+
+**Over SSH (alternative)**
+
+```bash
+sudo mkdir -p /DATA/AppData/localnetworkmonitor && cd /DATA/AppData/localnetworkmonitor
+```
+
+```bash
+sudo curl -fsSLO https://raw.githubusercontent.com/coraspirin/LocalNetworkMonitor/main/zimaos/docker-compose.yml
+```
+
+Fill in `ADMIN_PASSWORD` and `SECRET_KEY` in the file (`sudo vi docker-compose.yml`), then:
+
+```bash
+sudo docker compose up -d
+```
+
+Update:
+
+```bash
+sudo docker compose pull && sudo docker compose up -d
+```
+
+> **One-time step (for the repository owner):** GitHub may create the package published by Actions as private the first time. ZimaOS then cannot pull the image ("denied" / "unauthorized"). On GitHub go to your profile → **Packages** → `localnetworkmonitor` → **Package settings** → **Change visibility** → **Public**.
 
 ## Configuration
 

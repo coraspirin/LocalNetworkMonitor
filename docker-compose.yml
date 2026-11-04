@@ -1,7 +1,9 @@
 services:
   netscanner:
+    # Hazır imaj (GitHub Actions ile yayınlanır): `docker compose pull && docker compose up -d`
+    # Yerelde kaynaktan derlemek için: `docker compose up -d --build`
+    image: ghcr.io/coraspirin/localnetworkmonitor:latest
     build: .
-    image: localnetworkmonitor:latest
     container_name: localnetworkmonitor
     # Ev ağını L2 seviyesinde (ARP, mDNS, SSDP, DHCP) görebilmek için host ağı şart.
     # Yalnızca Linux host'ta (Raspberry Pi, NAS, sunucu) tam çalışır.

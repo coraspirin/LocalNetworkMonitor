@@ -1,0 +1,95 @@
+# Local Network Monitor — ZimaOS / CasaOS uygulama dosyası
+#
+# ZimaOS arayüzü: App Store → sağ üstteki "+" → "Install a customized app" → "Import"
+# → bu dosyanın içeriğini yapıştırın → ADMIN_PASSWORD ve SECRET_KEY değerlerini doldurun → Install.
+#
+# ZimaOS UI: App Store → "+" (top right) → "Install a customized app" → "Import"
+# → paste this file → fill in ADMIN_PASSWORD and SECRET_KEY → Install.
+
+name: localnetworkmonitor
+
+services:
+  localnetworkmonitor:
+    image: ghcr.io/coraspirin/localnetworkmonitor:latest
+    container_name: localnetworkmonitor
+    # Ev ağını L2 seviyesinde (ARP, mDNS, SSDP, DHCP) görebilmek için host ağı ve ham soket yetkisi şart
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    environment:
+      PORT: "8080"
+      ADMIN_PASSWORD: ""
+      SECRET_KEY: ""
+      TZ: Europe/Istanbul
+      DEFAULT_LANGUAGE: tr
+    volumes:
+      - type: bind
+        source: /DATA/AppData/localnetworkmonitor
+        target: /data
+    restart: unless-stopped
+    x-casaos:
+      envs:
+        - container: PORT
+          description:
+            en_us: Web interface port (change it if 8080 is already used by another app)
+            tr_tr: Web arayüzü portu (8080 başka bir uygulamada kullanılıyorsa değiştirin)
+        - container: ADMIN_PASSWORD
+          description:
+            en_us: Password for the web interface
+            tr_tr: Web arayüzü şifresi
+        - container: SECRET_KEY
+          description:
+            en_us: Long random value used to sign login cookies
+            tr_tr: Oturum çerezlerini imzalamak için uzun rastgele bir değer
+        - container: TZ
+          description:
+            en_us: Time zone
+            tr_tr: Saat dilimi
+        - container: DEFAULT_LANGUAGE
+          description:
+            en_us: "Default language for notifications and reports: tr or en"
+            tr_tr: "Bildirim ve raporların varsayılan dili: tr veya en"
+      volumes:
+        - container: /data
+          description:
+            en_us: Database (devices, scans, history, settings)
+            tr_tr: Veritabanı (cihazlar, taramalar, geçmiş, ayarlar)
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: localnetworkmonitor
+  author: coraspirin
+  developer: coraspirin
+  category: Network
+  icon: https://raw.githubusercontent.com/coraspirin/LocalNetworkMonitor/main/zimaos/icon.png
+  index: /
+  port_map: "8080"
+  scheme: http
+  title:
+    en_us: Local Network Monitor
+    tr_tr: Ağ İzleyici
+  tagline:
+    en_us: Discover, scan and monitor every device on your home network
+    tr_tr: Ev ağınızdaki tüm cihazları bulun, tarayın ve izleyin
+  description:
+    en_us: >-
+      Finds all devices on the LAN (ARP, mDNS, SSDP, NetBIOS), scans ports, services and OS with nmap,
+      checks for risky services and known vulnerabilities, audits UPnP on the router, detects ARP spoofing
+      and rogue DHCP servers, tracks phones that use private (randomized) MAC addresses and sends
+      notifications. Turkish and English web interface.
+    tr_tr: >-
+      Yerel ağdaki tüm cihazları bulur (ARP, mDNS, SSDP, NetBIOS), nmap ile port, servis ve işletim
+      sistemini tarar, riskli servisleri ve bilinen zafiyetleri kontrol eder, router'daki UPnP'yi denetler,
+      ARP spoofing ve sahte DHCP sunucularını tespit eder, gizli (rastgele) MAC kullanan telefonları takip
+      eder ve bildirim gönderir. Türkçe ve İngilizce arayüz.
+  tips:
+    before_install:
+      en_us: >-
+        Set ADMIN_PASSWORD and SECRET_KEY before installing. The app uses the host network to see your LAN;
+        if port 8080 is taken, change PORT and the web UI port accordingly.
+      tr_tr: >-
+        Kurmadan önce ADMIN_PASSWORD ve SECRET_KEY değerlerini girin. Uygulama ev ağını görebilmek için host
+        ağını kullanır; 8080 portu doluysa PORT değerini ve web arayüzü portunu değiştirin.

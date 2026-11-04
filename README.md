@@ -76,7 +76,50 @@ Güncelleme:
 git pull && docker compose up -d --build
 ```
 
+Derleme beklemek istemezseniz GitHub'da yayınlanan hazır imajı kullanabilirsiniz:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
 Veriler `./data/netscanner.db` (SQLite) dosyasında saklanır. Önceki sürümlerin veritabanı açılışta otomatik yükseltilir.
+
+## ZimaOS / CasaOS'a kurulum
+
+Her `main` güncellemesinde GitHub Actions hazır imajı `ghcr.io/coraspirin/localnetworkmonitor:latest` adresine yayınlar (amd64 + arm64). ZimaOS'ta derleme yapılmaz, terminal de gerekmez.
+
+**Arayüzden (önerilen)**
+
+1. ZimaOS arayüzünde **App Store**'u açın, sağ üstteki **+** düğmesine basın ve **Install a customized app** seçin.
+2. Sağ üstteki **Import** düğmesine basın ve [`zimaos/docker-compose.yml`](zimaos/docker-compose.yml) dosyasının içeriğini yapıştırın.
+3. Ortam değişkenlerinde `ADMIN_PASSWORD` ve `SECRET_KEY` değerlerini doldurun. 8080 portu başka bir uygulamada kullanılıyorsa `PORT` değerini (ve web arayüzü portunu) değiştirin.
+4. **Install**'a basın. Uygulama simgesi ana ekrana gelir; veriler `/DATA/AppData/localnetworkmonitor` klasöründe saklanır.
+
+Güncellemek için uygulamanın menüsünden güncelleme/yeniden kurma seçeneğini kullanın; en yeni `latest` imajı çekilir.
+
+**SSH ile (alternatif)**
+
+```bash
+sudo mkdir -p /DATA/AppData/localnetworkmonitor && cd /DATA/AppData/localnetworkmonitor
+```
+
+```bash
+sudo curl -fsSLO https://raw.githubusercontent.com/coraspirin/LocalNetworkMonitor/main/zimaos/docker-compose.yml
+```
+
+Dosyadaki `ADMIN_PASSWORD` ve `SECRET_KEY` değerlerini doldurun (`sudo vi docker-compose.yml`), sonra:
+
+```bash
+sudo docker compose up -d
+```
+
+Güncelleme:
+
+```bash
+sudo docker compose pull && sudo docker compose up -d
+```
+
+> **Tek seferlik adım (repo sahibi için):** GitHub, Actions ile yayınlanan imaj paketini ilk seferde gizli (private) oluşturabilir. Bu durumda ZimaOS imajı çekemez ("denied" / "unauthorized" hatası). GitHub'da profil → **Packages** → `localnetworkmonitor` → **Package settings** → **Change visibility** → **Public** yapın.
 
 ## Yapılandırma
 

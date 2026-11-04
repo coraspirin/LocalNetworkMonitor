@@ -1,5 +1,9 @@
 FROM python:3.12-slim-bookworm
 
+LABEL org.opencontainers.image.source="https://github.com/coraspirin/LocalNetworkMonitor" \
+      org.opencontainers.image.title="Local Network Monitor" \
+      org.opencontainers.image.description="Home network scanner and monitor: device discovery, port/OS scan, security checks, private MAC tracking (TR/EN web UI)"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
